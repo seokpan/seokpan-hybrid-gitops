@@ -32,6 +32,12 @@ Redis URL은 `rediss://<host>:<port>/0`이며 인증정보를 넣지 않는다. 
 
 Migration 목적 인증정보는 일반 App Deployment에 넣지 않으며 자동 Job도 포함하지 않는다. Schema/대상/Image/승인 Ref를 확인한 별도 단일 실행이 필요하다. Runtime 계정 분리, Data Restore/Cutover는 C의 작업 경계를 유지한다.
 
+### 설정·Secret·CA 개정의 소비자 반영
+
+공통 base의 `runtime.env`와 Overlay의 `runtime.env`를 논리 이름 `backend-config`의 ConfigMap Generator로 합친다. 실제 Render 이름은 내용 Hash가 붙은 `backend-config-<hash>`이고 Kustomize가 Backend의 `envFrom` 참조도 같은 이름으로 바꾼다. 대상/Origin/Profile 등 비민감 설정을 바꾸면 Backend PodTemplate도 달라져 승인한 Sync/Apply의 Rolling Update에 연결된다. 공통 base 단독 Build도 입력 대기 자료이며 직접 배포 대상이 아니다. 기존 생성 ConfigMap의 정리는 검토한 Prune/삭제 절차를 따르며 이 변경에서 자동 Prune를 켜지 않는다.
+
+외부 공급 Secret `backend-db-runtime`·`backend-redis-runtime`과 CA ConfigMap `backend-database-ca`·`backend-redis-ca`는 고정 논리 참조를 유지한다. 값/Object 교체만으로 기존 Pod의 환경변수나 이미 조립한 TLS Context/Pool이 갱신됐다고 판단하지 않는다. App 이관 묶음의 `backend/docs/hybrid-connections.md` 환경 경계와 같이 새 Config/Secret/CA 개정·허용 대상 조합을 기록하고, 승인한 Backend Pod 재기동과 재접속·양성/음성 연결·업무 검증을 수행한다. 재기동 의도는 공개 가능한 개정 ID의 PodTemplate 변경 등 승인된 배포 변경으로 연결하며 Secret 값/평문 Hash를 Git에 넣지 않는다. 공급 코드·Object와 실제 재기동/회수 성공은 해당 Owner의 후속 실행이며 이 PR에서 수행하지 않는다.
+
 ## Build와 검사
 
 검사 도구는 upstream `kubernetes-sigs/kustomize`의 고정 Release **v5.7.1**이다. 이 도구를 최종 실행 환경과 Bundle에 보존할지는 A/C/D의 실제 도구 인계에서 확인한다. 이번 검사에는 Linux amd64 Release의 공개 SHA256 `ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8`을 대조했다.
@@ -47,6 +53,8 @@ make release-manifest ENVIRONMENT=recovery OUTPUT=/separate/path/recovery.yaml K
 ```
 
 테스트는 PyYAML로 **실제 Kustomize 출력**을 읽으며 별도 Renderer가 아니다. Build/객체 충돌, 기동 보류, Secret/CA·TLS/AUTH 참조, SCC 관련 선언, Pull 경계, Probe/Port와 동일 Host Route를 검사한다. 실제 SCC Admission·임의 UID 파일 권한·Image Pull·DB/Redis 연결·업무·Offline 복구 시간은 실행하지 않았다.
+
+설정 변경 회귀검사는 두 Overlay의 격리 사본에서 DB 대상 설정 하나를 바꾸고 실제 Kustomize로 전후 Build한다. 생성 ConfigMap 이름과 Backend PodTemplate의 참조가 함께 바뀌고 Frontend·외부 CA 참조가 유지되는지 확인한다. 이는 선언의 Rollout 유발 연결 검사이며 실제 Pod 재기동 성공은 별도다.
 
 `tools/render_release.py`는 Python 표준 라이브러리만으로 실제 Kustomize v5.7.1의 출력에서 미해결 입력을 확인한다. `INPUT_REQUIRED`, 예약 `.invalid` 주소, `input-required` 표기, `replicas: 0` 또는 빈 출력이 있으면 실패하고 결과 파일을 만들지 않는다. 입력 검사를 통과해도 기존 파일·Symlink는 덮어쓰지 않으며 새 출력 경로가 필요하다. 출력 파일은 기존 경로와 충돌하지 않을 때만 원자적으로 생성하므로 이전 검증 Artifact가 보존된다. 과거 파일을 이번 성공으로 취급하지 않는다. 통과는 이 Source 입력 검사의 통과이며 Secret 존재·TLS 연결·Digest 승인·Context·Runtime/업무·Bundle 수락까지 증명하지 않는다. Apply/Sync와 외부 신규 조회는 하지 않는다.
 

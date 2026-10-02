@@ -96,6 +96,54 @@ class AppManifestBoundaries(unittest.TestCase):
                 self.assertNotIn("value", values[name])
                 self.assertIn("secretKeyRef", values[name]["valueFrom"])
 
+    def test_runtime_config_change_changes_backend_pod_template_reference(self):
+        # Render an isolated copy with the actual pinned tool. A ConfigMap
+        # envFrom value change alone does not update a running process's env;
+        # its generated name and consuming Pod template must change together.
+        for env in ("lab", "recovery"):
+            with self.subTest(env=env), tempfile.TemporaryDirectory() as directory:
+                copied_apps = Path(directory) / "apps"
+                shutil.copytree(ROOT / "apps", copied_apps)
+
+                def render():
+                    result = subprocess.run(
+                        [KUSTOMIZE, "build", str(copied_apps / "overlays" / env)],
+                        check=True, capture_output=True, text=True,
+                    )
+                    resources = list(yaml.safe_load_all(result.stdout))
+                    config = next(r for r in resources if r["kind"] == "ConfigMap")
+                    deployments = {r["metadata"]["name"]: r for r in resources
+                                   if r["kind"] == "Deployment"}
+                    return config, deployments
+
+                before_config, before_deployments = render()
+                runtime_env = copied_apps / "overlays" / env / "runtime.env"
+                old_host = before_config["data"]["SEOKPAN_DATABASE_EXPECTED_HOST"]
+                new_host = env + "-db-new.example.test"
+                runtime_env.write_text(runtime_env.read_text(encoding="utf-8").replace(
+                    "SEOKPAN_DATABASE_EXPECTED_HOST=" + old_host,
+                    "SEOKPAN_DATABASE_EXPECTED_HOST=" + new_host,
+                ), encoding="utf-8")
+                after_config, after_deployments = render()
+
+                self.assertEqual(after_config["data"]["SEOKPAN_DATABASE_EXPECTED_HOST"],
+                                 new_host)
+                self.assertNotEqual(before_config["metadata"]["name"],
+                                    after_config["metadata"]["name"])
+                for config, deployments in ((before_config, before_deployments),
+                                            (after_config, after_deployments)):
+                    self.assertTrue(config["metadata"]["name"].startswith("backend-config-"))
+                    pod = deployments["backend"]["spec"]["template"]["spec"]
+                    self.assertEqual(pod["containers"][0]["envFrom"],
+                                     [{"configMapRef": {"name": config["metadata"]["name"]}}])
+                    self.assertEqual({v["configMap"]["name"] for v in pod["volumes"]
+                                      if "configMap" in v},
+                                     {"backend-database-ca", "backend-redis-ca"})
+                self.assertNotEqual(before_deployments["backend"]["spec"]["template"],
+                                    after_deployments["backend"]["spec"]["template"])
+                self.assertEqual(before_deployments["frontend"],
+                                 after_deployments["frontend"])
+
     def test_ca_inputs_are_required_external_refs(self):
         for env in self.renders:
             backend = next(d for d in self.by_kind(env, "Deployment")

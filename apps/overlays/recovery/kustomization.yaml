@@ -14,8 +14,8 @@ images:
 patches:
   - target: {kind: Deployment}
     path: registry-pull.yaml
-generatorOptions:
-  disableNameSuffixHash: true
+# Keep the generated ConfigMap content hash. External Secret/CA inputs remain
+# owner-supplied names and require a separately approved consumer restart.
 configMapGenerator:
   - name: backend-config
     behavior: merge

@@ -4,4 +4,6 @@ resources:
   - backend.yaml
   - frontend.yaml
   - services.yaml
-  - configmap.yaml
+configMapGenerator:
+  - name: backend-config
+    envs: [runtime.env]

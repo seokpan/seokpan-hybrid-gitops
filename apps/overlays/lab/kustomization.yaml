@@ -12,8 +12,8 @@ images:
   - name: seokpan-frontend
     newName: lab-registry-input-required.invalid/frontend
     newTag: INPUT_REQUIRED
-generatorOptions:
-  disableNameSuffixHash: true
+# Keep the generated ConfigMap content hash: envFrom inputs are loaded when
+# Pods start, so a configuration change must also change the Pod template ref.
 configMapGenerator:
   - name: backend-config
     behavior: merge
