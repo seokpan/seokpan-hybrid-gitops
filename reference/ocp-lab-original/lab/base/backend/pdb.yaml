@@ -1,0 +1,16 @@
+# Owner: 정태훈
+# Scope: Application Runtime / GitOps
+# Related: seokpan-gitops#57
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend
+  namespace: application
+  labels:
+    app.kubernetes.io/name: backend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend

@@ -1,0 +1,7 @@
+- op: add
+  path: /spec/template/spec/hostAliases
+  value:
+    - ip: "172.30.42.74"
+      hostnames: ["db.seokpan.soldesk.store"]
+    - ip: "172.30.119.120"
+      hostnames: ["redis.platform.svc.cluster.local"]

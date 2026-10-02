@@ -1,0 +1,70 @@
+# UWM Alertmanager → 웹훅 수신 확인용 Pod (검증 후 삭제)
+# - 공유 서버에 메일 자격 증명을 올리지 않기 위해 웹훅으로 경로만 검증
+# - 이미 노드에 있는 backend 이미지의 Python 사용
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-receiver
+  namespace: seokpan-app
+  labels:
+    app.kubernetes.io/name: alert-receiver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alert-receiver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alert-receiver
+    spec:
+      containers:
+        - name: receiver
+          image: image-registry.openshift-image-registry.svc:5000/seokpan-app/backend@sha256:994307ad5ffc323e83772465645739058a68bfe7d74b59c817e12f2ebee18f50
+          command: ["/app/.venv/bin/python", "-c"]
+          args:
+            - |
+              import http.server, json
+              class H(http.server.BaseHTTPRequestHandler):
+                  def do_POST(self):
+                      body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                      try:
+                          d = json.loads(body)
+                          for a in d.get("alerts", []):
+                              l = a.get("labels", {})
+                              print(f"RECV {a.get('status')} {l.get('alertname')} ns={l.get('namespace')} pod={l.get('pod','-')} severity={l.get('severity')} startsAt={a.get('startsAt')} endsAt={a.get('endsAt')}", flush=True)
+                      except Exception as e:
+                          print("RECV raw", body[:300], e, flush=True)
+                      self.send_response(200); self.end_headers()
+                  def do_GET(self):
+                      self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+                  def log_message(self, *a):
+                      pass
+              print("receiver listening on 8080", flush=True)
+              http.server.HTTPServer(("", 8080), H).serve_forever()
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            runAsNonRoot: true
+            seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-receiver
+  namespace: seokpan-app
+  labels:
+    app.kubernetes.io/name: alert-receiver
+spec:
+  selector:
+    app.kubernetes.io/name: alert-receiver
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

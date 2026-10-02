@@ -1,0 +1,21 @@
+# 실습 검증용 NetworkPolicy (base 반영은 네트워크 담당과 협의)
+# 30: 모니터링 NS(UWM Prometheus)에서 backend /metrics(8000) 수집 허용
+# - 1차 Calico 정책의 observability NS 허용과 같은 역할, OpenShift에서는 policy-group 라벨 사용
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: 30-allow-backend-metrics-from-monitoring
+  namespace: seokpan-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000

@@ -1,0 +1,108 @@
+# Owner: 정태훈
+# Scope: Application Runtime / GitOps
+# Related: seokpan-gitops#29, seokpan-gitops#35, seokpan-app#50
+# Two replicas are spread across workers after the one-replica provider gate passed.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: application
+  annotations:
+    seokpan.io/app-source-commit: "6fb8b75fed633769936ea206e8a88351eb062b9a"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: backend
+      imagePullSecrets:
+        - name: harbor-pull-secret
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: harbor.seokpan.soldesk.store/seokpan/backend:git-pending
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: SEOKPAN_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SEOKPAN_IDENTITY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-runtime
+                  key: SEOKPAN_IDENTITY_DATABASE_URL
+            - name: SEOKPAN_GAME_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-runtime
+                  key: SEOKPAN_GAME_DATABASE_URL
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: database-ca
+              mountPath: /etc/seokpan/pki/ca.crt
+              subPath: ca.crt
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: database-ca
+          configMap:
+            name: seokpan-internal-ca
+            items:
+              - key: ca.crt
+                path: ca.crt

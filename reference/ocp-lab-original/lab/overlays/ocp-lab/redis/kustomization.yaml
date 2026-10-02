@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: seokpan-app
+resources:
+  - ../../../base/redis
+patches:
+  - target: {kind: StatefulSet, name: redis}
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: managed-nfs-storage
+      # UWM Pod(openshift-user-critical) 선점으로 redis-0가 Pending된 건 대응 (2026/10/01)
+      # 실습 서버 worker 메모리 requests 여유 부족으로 1Gi → 256Mi 축소, limit 3Gi는 유지
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 256Mi

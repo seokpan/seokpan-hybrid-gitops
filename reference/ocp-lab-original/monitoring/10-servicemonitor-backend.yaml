@@ -1,0 +1,18 @@
+# Owner: Delivery & Observability
+# Scope: Application Metrics (OpenShift UWM)
+# 1차 seokpan-gitops observability/servicemonitor-app.yaml 기준
+# - UWM은 ServiceMonitor와 같은 NS의 Service만 수집하므로 seokpan-app에 둔다
+# - release 라벨은 UWM에서 사용하지 않으므로 제거
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seokpan-app-metrics
+  namespace: seokpan-app
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

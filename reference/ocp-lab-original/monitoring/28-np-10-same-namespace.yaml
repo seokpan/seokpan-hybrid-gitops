@@ -1,0 +1,13 @@
+# 실습 검증용 NetworkPolicy (base 반영은 네트워크 담당과 협의)
+# 10: seokpan-app 내부 Pod 간 통신 허용 (frontend→backend, backend→redis/mariadb)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: 10-allow-same-namespace
+  namespace: seokpan-app
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {}

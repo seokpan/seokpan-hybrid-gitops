@@ -1,0 +1,83 @@
+# Owner: 정태훈
+# Scope: Backend approved one-shot database migration
+# Related: seokpan-gitops#44, seokpan-gitops#40, seokpan-app#22, seokpan-app#50
+#
+# This is an execution template, not an Argo CD continuously-synced resource.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: backend-db-migration-
+  namespace: application
+  labels:
+    app.kubernetes.io/name: backend-db-migration
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: seokpan
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend-db-migration
+        app.kubernetes.io/component: migration
+        app.kubernetes.io/part-of: seokpan
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: harbor-pull-secret
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migration
+          image: harbor.seokpan.soldesk.store/seokpan/backend@sha256:994307ad5ffc323e83772465645739058a68bfe7d74b59c817e12f2ebee18f50
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command:
+            - seokpan-migration-gate
+          args:
+            - "upgrade-head"
+            - "--expect-host"
+            - "db.seokpan.soldesk.store"
+            - "--expect-port"
+            - "3306"
+            - "--expect-database"
+            - "stone_game"
+            - "--execute"
+            - "--approval-ref"
+            - "seokpan/seokpan-hybrid-gitops#1:issuecomment-5925665068"
+          env:
+            - name: SEOKPAN_MIGRATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-migration
+                  key: SEOKPAN_MIGRATION_DATABASE_URL
+            - name: SEOKPAN_DATABASE_CA_FILE
+              value: /etc/seokpan/pki/ca.crt
+          securityContext:
+            runAsNonRoot: true
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: database-ca
+              mountPath: /etc/seokpan/pki/ca.crt
+              subPath: ca.crt
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: database-ca
+          configMap:
+            name: seokpan-internal-ca
+            items:
+              - key: ca.crt
+                path: ca.crt

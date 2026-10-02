@@ -1,0 +1,20 @@
+# seokpan-app 알림 라우팅 (UWM 전용 Alertmanager)
+# - UWM이 namespace=seokpan-app 매처를 자동으로 추가하므로 다른 프로젝트 알림은 들어오지 않음
+# - 1차 Resend 메일 receiver 자리를 이번 검증에서는 웹훅으로 대체
+apiVersion: monitoring.coreos.com/v1beta1
+kind: AlertmanagerConfig
+metadata:
+  name: seokpan-app-alert-routing
+  namespace: seokpan-app
+spec:
+  route:
+    receiver: seokpan-webhook
+    groupBy: ["alertname"]
+    groupWait: 10s
+    groupInterval: 30s
+    repeatInterval: 1h
+  receivers:
+    - name: seokpan-webhook
+      webhookConfigs:
+        - url: http://alert-receiver.seokpan-app.svc:8080/alerts
+          sendResolved: true

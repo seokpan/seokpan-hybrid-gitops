@@ -1,0 +1,71 @@
+# Owner: Delivery & Observability
+# Scope: Application Alert Rules (OpenShift UWM)
+# - UWM에서는 Thanos Ruler가 평가하고 플랫폼 Alertmanager(alertmanager-main)로 전달됨
+# - namespace 라벨은 UWM이 자동으로 강제하므로 식에 쓰지 않는다
+# - 사용자 프로젝트에는 OCP 기본 KubePodNotReady/Pending 알림이 적용되지 않아 직접 정의한다
+# - 임계값(5xx 5%, p95 1s, 5m)은 임시값이며 팀 합의 후 조정
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: seokpan-app-rules
+  namespace: seokpan-app
+spec:
+  groups:
+    - name: seokpan-backend
+      rules:
+        - alert: SeokpanBackendDown
+          expr: up{job="backend"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "backend 메트릭 수집 실패"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} 의 /metrics 수집이 1분 이상 실패했습니다."
+        - alert: SeokpanBackendHigh5xxRate
+          expr: |
+            (
+              sum(rate(seokpan_http_requests_total{job="backend",route!~"/health/.*",status=~"5.."}[5m]))
+              /
+              sum(rate(seokpan_http_requests_total{job="backend",route!~"/health/.*"}[5m]))
+            ) > 0.05
+            and
+            sum(rate(seokpan_http_requests_total{job="backend",route!~"/health/.*"}[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "backend 5xx 응답 비율 5% 초과 (probe 제외)"
+            description: "최근 5분 5xx 비율이 {{ $value | humanizePercentage }} 입니다."
+        - alert: SeokpanBackendHighLatencyP95
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(seokpan_http_request_duration_seconds_bucket{job="backend",route!~"/health/.*"}[5m]))
+            ) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "backend 응답시간 p95 1초 초과 (probe 제외)"
+            description: "최근 5분 p95 응답시간이 {{ $value | humanizeDuration }} 입니다."
+    - name: seokpan-workload
+      rules:
+        - alert: SeokpanPodNotReady
+          expr: |
+            sum by (namespace, pod) (kube_pod_status_ready{condition="false"})
+            * on (namespace, pod)
+            sum by (namespace, pod) (kube_pod_status_phase{phase="Running"})
+            > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod가 Running이지만 Ready가 아님"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} 가 5분 이상 Not Ready 상태입니다."
+        - alert: SeokpanPodPending
+          expr: sum by (namespace, pod) (kube_pod_status_phase{phase="Pending"}) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod가 스케줄되지 못하고 Pending 상태"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} 가 5분 이상 Pending 상태입니다. 노드 자원 또는 선점 여부를 확인하세요."

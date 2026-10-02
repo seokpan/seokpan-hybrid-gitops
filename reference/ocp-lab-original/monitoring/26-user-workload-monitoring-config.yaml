@@ -1,0 +1,41 @@
+# UWM 컴포넌트 배치 및 전용 Alertmanager 설정 (실습 서버 한정)
+# - worker 메모리 requests 여유 부족으로 UWM Pod가 앱 Pod를 선점한 사례가 있어 master에 배치
+# - ROSA에서는 master 배치 불가 → worker 사이징으로 해결해야 함
+# - alertmanager.enableAlertmanagerConfig: 프로젝트별 AlertmanagerConfig CR 사용 허용
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-workload-monitoring-config
+  namespace: openshift-user-workload-monitoring
+data:
+  config.yaml: |
+    prometheusOperator:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+    prometheus:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+    thanosRuler:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+    alertmanager:
+      enabled: true
+      enableAlertmanagerConfig: true
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule

@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: seokpan-app
+resources:
+  - ../../../base/frontend
+  - routes.yaml
+images:
+  - name: harbor.seokpan.soldesk.store/seokpan/frontend
+    newName: image-registry.openshift-image-registry.svc:5000/seokpan-app/frontend
+    digest: sha256:5db2a92187b1e23eecc97b12f24ed5313dad44d16d78c5fe7083734d424130c3
+replicas:
+  - name: frontend
+    count: 1
+patches:
+  - target: {kind: PodDisruptionBudget, name: frontend}
+    patch: |-
+      $patch: delete
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: frontend
+  - target: {kind: Deployment, name: frontend}
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/imagePullSecrets

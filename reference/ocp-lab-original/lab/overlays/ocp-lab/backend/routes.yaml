@@ -1,0 +1,23 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: backend-api
+spec:
+  host: game-seokpan.apps.demo2.ocp4lab.com
+  path: /api/v1
+  to: {kind: Service, name: backend}
+  port: {targetPort: http}
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: backend-ws
+  annotations:
+    haproxy.router.openshift.io/timeout-tunnel: 1h   # WebSocket 연결 유지 시간
+spec:
+  host: game-seokpan.apps.demo2.ocp4lab.com
+  path: /ws/v1
+  to: {kind: Service, name: backend}
+  port: {targetPort: http}
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}

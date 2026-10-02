@@ -1,0 +1,14 @@
+# Owner: 정태훈
+# Scope: Kubernetes / Service Platform
+# Project: 石나가는 판단
+# Purpose: Redis Runtime GitOps 리소스 구성
+# Created: 2026-08-29
+# Updated: 2026-09-01
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+  - service.yaml
+  - statefulset.yaml

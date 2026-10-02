@@ -1,0 +1,30 @@
+# 실습 검증용 NetworkPolicy (base 반영은 네트워크 담당과 협의)
+# 00: seokpan-app 전체 Ingress 차단
+# 05: 알림 수신 Pod는 모니터링 NS(UWM Alertmanager)에서만 허용 - 차단 시 장애 알림 자체가 전달되지 않음
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: 00-default-deny-ingress
+  namespace: seokpan-app
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: 05-allow-alert-receiver-from-monitoring
+  namespace: seokpan-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alert-receiver
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
