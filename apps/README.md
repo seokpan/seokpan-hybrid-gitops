@@ -48,7 +48,7 @@ make release-manifest ENVIRONMENT=recovery OUTPUT=/separate/path/recovery.yaml K
 
 테스트는 PyYAML로 **실제 Kustomize 출력**을 읽으며 별도 Renderer가 아니다. Build/객체 충돌, 기동 보류, Secret/CA·TLS/AUTH 참조, SCC 관련 선언, Pull 경계, Probe/Port와 동일 Host Route를 검사한다. 실제 SCC Admission·임의 UID 파일 권한·Image Pull·DB/Redis 연결·업무·Offline 복구 시간은 실행하지 않았다.
 
-`tools/render_release.py`는 Python 표준 라이브러리만으로 실제 Kustomize v5.7.1의 출력에서 미해결 입력을 확인한다. `INPUT_REQUIRED`, 예약 `.invalid` 주소, `input-required` 표기, `replicas: 0` 또는 빈 출력이 있으면 실패하고 결과 파일을 만들지 않는다. 기존 파일도 실패 시 갱신하지 않으므로 과거 파일을 이번 성공으로 취급하지 않는다. 통과는 이 Source 입력 검사의 통과이며 Secret 존재·TLS 연결·Digest 승인·Context·Runtime/업무·Bundle 수락까지 증명하지 않는다. Apply/Sync와 외부 신규 조회는 하지 않는다.
+`tools/render_release.py`는 Python 표준 라이브러리만으로 실제 Kustomize v5.7.1의 출력에서 미해결 입력을 확인한다. `INPUT_REQUIRED`, 예약 `.invalid` 주소, `input-required` 표기, `replicas: 0` 또는 빈 출력이 있으면 실패하고 결과 파일을 만들지 않는다. 입력 검사를 통과해도 기존 파일·Symlink는 덮어쓰지 않으며 새 출력 경로가 필요하다. 출력 파일은 기존 경로와 충돌하지 않을 때만 원자적으로 생성하므로 이전 검증 Artifact가 보존된다. 과거 파일을 이번 성공으로 취급하지 않는다. 통과는 이 Source 입력 검사의 통과이며 Secret 존재·TLS 연결·Digest 승인·Context·Runtime/업무·Bundle 수락까지 증명하지 않는다. Apply/Sync와 외부 신규 조회는 하지 않는다.
 
 ## 활성화 전에 남은 작업
 

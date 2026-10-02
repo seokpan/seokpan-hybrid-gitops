@@ -169,6 +169,52 @@ class AppManifestBoundaries(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertEqual(output.read_text(), "previous reviewed artifact")
 
+    def test_successful_input_gate_creates_only_new_artifacts_and_preserves_symlinks(self):
+        # A controlled tool response isolates output preservation after a
+        # successful input gate. Actual overlay rendering is covered above.
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            fixture = directory / "kustomize-fixture"
+            manifest = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: fixture\n"
+            fixture.write_text(
+                "#!" + sys.executable + "\nimport sys\n"
+                "print('v5.7.1' if sys.argv[1] == 'version' else " + repr(manifest) + ", end='' if sys.argv[1] != 'version' else '\\n')\n",
+                encoding="utf-8",
+            )
+            fixture.chmod(0o755)
+
+            def render(output):
+                return subprocess.run(
+                    [sys.executable, str(ROOT / "tools/render_release.py"), "lab",
+                     "--output", str(output), "--kustomize", str(fixture)],
+                    capture_output=True, text=True,
+                )
+
+            output = directory / "new.yaml"
+            self.assertEqual(render(output).returncode, 0)
+            self.assertEqual(output.read_text(), manifest)
+            output.write_text("preserved reviewed artifact", encoding="utf-8")
+            result = render(output)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("output already exists", result.stderr)
+            self.assertEqual(output.read_text(), "preserved reviewed artifact")
+
+            symlink = directory / "existing-symlink.yaml"
+            symlink.symlink_to(output)
+            self.assertEqual(render(symlink).returncode, 2)
+            self.assertTrue(symlink.is_symlink())
+            self.assertEqual(output.read_text(), "preserved reviewed artifact")
+
+            dangling = directory / "dangling-symlink.yaml"
+            missing = directory / "missing.yaml"
+            dangling.symlink_to(missing)
+            self.assertEqual(render(dangling).returncode, 2)
+            self.assertTrue(dangling.is_symlink())
+            self.assertFalse(missing.exists())
+            self.assertEqual({p.name for p in directory.iterdir()},
+                             {"kustomize-fixture", "new.yaml", "existing-symlink.yaml",
+                              "dangling-symlink.yaml"})
+
 
 if __name__ == "__main__":
     unittest.main()

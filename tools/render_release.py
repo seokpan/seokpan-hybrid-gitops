@@ -49,20 +49,24 @@ def main():
     if blockers:
         print("release withheld: " + ", ".join(blockers), file=sys.stderr)
         return 2
-    # Output is committed atomically only after this input gate passes.
-    # A pre-existing file is not overwritten by a failed gate.
+    # Commit the output atomically without replacing an existing artifact.
+    # link() also refuses an existing symlink, including a dangling one.
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
                                          dir=args.output.parent, delete=False) as tmp:
             temp_path = Path(tmp.name)
             tmp.write(result.stdout)
-        temp_path.replace(args.output)
+        os.link(temp_path, args.output)
+    except FileExistsError:
+        print("release withheld: output already exists", file=sys.stderr)
+        return 2
     except OSError:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
         print("release withheld: could not write output", file=sys.stderr)
         return 2
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
     print("source input gate passed; Runtime/owner acceptance remains separate", file=sys.stderr)
     return 0
 
