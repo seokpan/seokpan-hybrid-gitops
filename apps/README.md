@@ -1,4 +1,4 @@
-# App base와 lab / Recovery 입력 대기 구현
+# App base와 환경별 입력 대기 구현
 
 목적은 D의 [GitOps #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5)에 실제 Kustomize 선언을 인계하고, C의 Offline Recovery에서 소비할 App 설정·Secret/CA 경계를 마련하는 것이다. RTO/RPO 숫자를 정하거나 실제 복구 결과를 대신하는 자료가 아니다.
 
@@ -66,4 +66,4 @@ make release-manifest ENVIRONMENT=recovery OUTPUT=/separate/path/recovery.yaml K
 4. D #5의 수동 Sync·Health와 #6의 수정 Image/양성·음성 연결·업무 검증을 받는다. Namespace/Prune/Finalizer/삭제 정책은 이번 변경에서 수정하지 않았다.
 5. Recovery 접속·새 Redis 상태 처리·완료 기록/신규 게임 업무를 확인한 Render·Image·Config/CA·Secret 논리 참조·도구를 장애 전에 로컬에 보존한다. C의 Bundle 수락과 D의 기존 실제 Run에 연결해 탐지부터 업무 재개, Backup Data 시각 근거와 최신성을 측정한다. RTO 30분/RPO 90분/1시간 Backup은 기존 공식 목표를 유지하며 강화 수치는 실측·업무 영향·팀 부담 판단 전 확정하지 않는다.
 
-Cloud Overlay의 ECR·FE/BE 3 Replica·PDB minAvailable 2·AZ soft spread/자원 검증은 후속 범위다. Cloud 없는 이번 Build 결과를 ROSA 배포 완료로 표시하지 않는다.
+Cloud 선언 후보는 [cloud](overlays/cloud/README.md)에 별도 후속 변경으로 연결한다. 기본 Render는 기동 보류 0이며 승인된 FE/BE 각 3 Replica·PDB minAvailable 2·AZ soft spread는 분리된 목표 Preview다. 실제 Source 상태 공유·1 Replica 실측·Pool/자원·입력/권한·Runtime 검증 뒤 리뷰한 변경으로 활성화한다. Cloud Source Build를 ROSA 생성·배포 완료로 표시하지 않는다.
