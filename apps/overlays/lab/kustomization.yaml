@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# GitOps #5's isolated target. No Namespace object or ownership label mutation.
+namespace: seokpan-argotest
+resources:
+  - ../../base
+  - routes.yaml
+images:
+  - name: seokpan-backend
+    newName: lab-registry-input-required.invalid/backend
+    newTag: INPUT_REQUIRED
+  - name: seokpan-frontend
+    newName: lab-registry-input-required.invalid/frontend
+    newTag: INPUT_REQUIRED
+# Keep the generated ConfigMap content hash: envFrom inputs are loaded when
+# Pods start, so a configuration change must also change the Pod template ref.
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    envs: [runtime.env]
