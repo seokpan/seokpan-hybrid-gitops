@@ -4,12 +4,16 @@ kind: Kustomization
 namespace: recovery-input-required
 resources:
   - ../../base
+  - redis.yaml
 images:
   - name: seokpan-backend
     newName: recovery-harbor-input-required.invalid/backend
     newTag: INPUT_REQUIRED
   - name: seokpan-frontend
     newName: recovery-harbor-input-required.invalid/frontend
+    newTag: INPUT_REQUIRED
+  - name: seokpan-recovery-redis
+    newName: recovery-harbor-input-required.invalid/redis
     newTag: INPUT_REQUIRED
 patches:
   - target: {kind: Deployment}
@@ -20,3 +24,5 @@ configMapGenerator:
   - name: backend-config
     behavior: merge
     envs: [runtime.env]
+  - name: recovery-redis-config
+    files: [redis.conf]
