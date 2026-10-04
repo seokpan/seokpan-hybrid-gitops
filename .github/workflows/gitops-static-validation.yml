@@ -2,7 +2,7 @@ name: GitOps source validation
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
     branches: [main, implementation/app-lab-recovery-20261002]
     paths:
       - 'apps/**'
@@ -10,10 +10,8 @@ on:
       - 'Makefile'
       - '.github/workflows/gitops-static-validation.yml'
   push:
-    branches:
-      - main
-      - implementation/app-lab-recovery-20261002
-      - implementation/cloud-overlay-candidate-20261002
+    # Candidate branches are validated by pull_request; avoid duplicate cancelled checks.
+    branches: [main]
     paths:
       - 'apps/**'
       - 'tools/**'
@@ -24,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: gitops-static-${{ github.event.pull_request.head.sha || github.sha }}
+  group: gitops-static-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
