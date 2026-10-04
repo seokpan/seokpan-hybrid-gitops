@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: recovery-redis
+  annotations:
+    seokpan.io/release-state: input-required-no-runtime-validation
+spec:
+  # Held Source only. C/A must review a fresh isolated runtime and its storage.
+  replicas: 0
+  serviceName: recovery-redis
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recovery-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recovery-redis
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets: [{name: recovery-harbor-pull}]
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: redis
+          image: seokpan-recovery-redis:INPUT_REQUIRED
+          imagePullPolicy: IfNotPresent
+          # The supplied local image must support this binary and arbitrary UID.
+          # Passwords are read by Redis from C's protected include, never argv.
+          command: [redis-server]
+          args: [/etc/seokpan/redis/redis.conf]
+          ports: [{name: redis-tls, containerPort: 6379, protocol: TCP}]
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: runtime-data, mountPath: /data}
+            - {name: redis-config, mountPath: /etc/seokpan/redis, readOnly: true}
+            - {name: server-tls, mountPath: /etc/seokpan/redis-server-tls, readOnly: true}
+            - {name: server-auth, mountPath: /etc/seokpan/redis-server-auth, readOnly: true}
+            - {name: runtime-config, mountPath: /etc/seokpan/redis-runtime, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: runtime-data
+          # A held volume interface, not a PVC/persistence policy selection.
+          # C/A may replace it with a reviewed fresh isolated volume source.
+          persistentVolumeClaim:
+            claimName: recovery-redis-storage-input-required
+        - name: redis-config
+          configMap:
+            name: recovery-redis-config
+            items: [{key: redis.conf, path: redis.conf}]
+        - name: server-tls
+          secret:
+            secretName: recovery-redis-server-tls
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+              - {key: ca.crt, path: ca.crt}
+        - name: server-auth
+          secret:
+            secretName: recovery-redis-server-auth
+            items: [{key: redis-auth.conf, path: redis-auth.conf}]
+        - name: runtime-config
+          configMap:
+            name: recovery-redis-runtime-input-required
+            items: [{key: redis-runtime.conf, path: redis-runtime.conf}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recovery-redis
+spec:
+  # Internal governing DNS only; no NodePort/LoadBalancer/external address.
+  type: ClusterIP
+  clusterIP: None
+  selector: {app.kubernetes.io/name: recovery-redis}
+  ports: [{name: redis-tls, port: 6379, targetPort: redis-tls, protocol: TCP}]
