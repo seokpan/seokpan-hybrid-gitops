@@ -1,0 +1,139 @@
+name: GitOps source validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, implementation/app-lab-recovery-20261002]
+    paths:
+      - 'apps/**'
+      - 'tools/**'
+      - 'Makefile'
+      - '.github/workflows/gitops-static-validation.yml'
+  push:
+    branches:
+      - main
+      - implementation/app-lab-recovery-20261002
+      - implementation/cloud-overlay-candidate-20261002
+    paths:
+      - 'apps/**'
+      - 'tools/**'
+      - 'Makefile'
+      - '.github/workflows/gitops-static-validation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitops-static-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    # Public standard runners are free; hold this job if visibility changes.
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    env:
+      SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONNOUSERSITE: '1'
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - name: Checkout the submitted commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install checksum-verified Kustomize v5.7.1
+        run: |
+          set -euo pipefail
+          gitops_download_dir="${RUNNER_TEMP}/gitops-kustomize-download"
+          gitops_binary_dir="${RUNNER_TEMP}/gitops-kustomize-bin"
+          mkdir -p "$gitops_download_dir" "$gitops_binary_dir"
+          cd "$gitops_download_dir"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz \
+            --output kustomize_v5.7.1_linux_amd64.tar.gz
+          printf '%s  %s\n' \
+            ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8 \
+            kustomize_v5.7.1_linux_amd64.tar.gz | sha256sum -c -
+          tar -xzf kustomize_v5.7.1_linux_amd64.tar.gz -C "$gitops_binary_dir" kustomize
+          test "$("$gitops_binary_dir/kustomize" version)" = v5.7.1
+          printf 'KUSTOMIZE=%s\n' "$gitops_binary_dir/kustomize" >> "$GITHUB_ENV"
+
+      - name: Prepare isolated Python test dependencies
+        run: |
+          set -euo pipefail
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+          gitops_venv="${RUNNER_TEMP}/gitops-test-venv"
+          python3 -m venv "$gitops_venv"
+          "$gitops_venv/bin/python" -m pip install --disable-pip-version-check \
+            --no-cache-dir --only-binary=:all: PyYAML==6.0.2
+          "$gitops_venv/bin/python" -c 'import yaml; assert yaml.__version__ == "6.0.2"; print("PyYAML:", yaml.__version__)'
+          printf 'GITOPS_TEST_PYTHON=%s\n' "$gitops_venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Check Python syntax and expected source suite
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          "$GITOPS_TEST_PYTHON" - "${RUNNER_TEMP}/gitops-suite.json" <<'PY'
+          import json, os, pathlib, re, sys, unittest
+          root = pathlib.Path.cwd()
+          for path in sorted((root / "tools").glob("*.py")):
+              compile(path.read_text(encoding="utf-8"), str(path), "exec")
+          cloud_source = (root / "apps/overlays/cloud").is_dir()
+          cloud_tests = (root / "tools/test_cloud_manifests.py").is_file()
+          cloud_branch = os.environ["SOURCE_BRANCH"] == "implementation/cloud-overlay-candidate-20261002"
+          if cloud_branch and not (cloud_source and cloud_tests):
+              raise SystemExit("Cloud stack must retain its source and test suite")
+          if cloud_source != cloud_tests:
+              raise SystemExit("Cloud source and test suite must be present together")
+          makefile = (root / "Makefile").read_text(encoding="utf-8")
+          pattern = re.search(r"unittest discover -s tools -p '([^']+)'", makefile)
+          if pattern is None:
+              raise SystemExit("Expected existing Makefile unittest target")
+          loader = unittest.TestLoader()
+          suite = loader.discover("tools", pattern=pattern.group(1))
+          app_count = loader.loadTestsFromName("test_app_manifests").countTestCases()
+          cloud_count = loader.loadTestsFromName("test_cloud_manifests").countTestCases() if cloud_tests else 0
+          minimum = 19 if cloud_tests else 11
+          if app_count < 11 or (cloud_tests and cloud_count < 8) or suite.countTestCases() < minimum:
+              raise SystemExit("Expected source tests are missing or not discovered")
+          record = {"source": os.popen("git rev-parse HEAD").read().strip(),
+                    "pattern": pattern.group(1), "discovered": suite.countTestCases(),
+                    "app": app_count, "cloud": cloud_count, "minimum": minimum}
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(record), encoding="utf-8")
+          print(json.dumps(record))
+          PY
+
+      - name: Run the existing Kustomize source checks
+        run: |
+          set -euo pipefail
+          make test PYTHON="$GITOPS_TEST_PYTHON" KUSTOMIZE="$KUSTOMIZE" \
+            2>&1 | tee "${RUNNER_TEMP}/gitops-tests.log"
+          "$GITOPS_TEST_PYTHON" - "${RUNNER_TEMP}/gitops-suite.json" "${RUNNER_TEMP}/gitops-tests.log" <<'PY'
+          import json, pathlib, re, sys
+          suite = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          log = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+          counts = re.findall(r"(?m)^Ran ([0-9]+) tests? in ", log)
+          if len(counts) != 1 or int(counts[0]) != suite["discovered"]:
+              raise SystemExit("Executed test count does not match discovered source suite")
+          if int(counts[0]) < suite["minimum"] or re.search(r"(?m)^OK$", log) is None:
+              raise SystemExit("Source tests did not pass without skips or expected failures")
+          print("Executed source tests:", counts[0])
+          PY
+
+      - name: Confirm source remained unchanged
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+          {
+            printf 'Source commit: %s\n' "$(git rev-parse HEAD)"
+            printf 'Kustomize: %s\n' "$("$KUSTOMIZE" version)"
+            printf 'Scope: local source/render checks only; no cluster, registry, Cloud, deployment or runtime acceptance.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
