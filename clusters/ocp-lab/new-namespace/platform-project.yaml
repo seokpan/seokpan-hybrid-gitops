@@ -1,0 +1,23 @@
+# Source review candidate. Resolve input/ownership and review before any Apply/Sync.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: seokpan-ocp-lab-platform
+  namespace: gitops-controller-input-required
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    seokpan.io/release-state: input-required-no-runtime-validation
+spec:
+  description: Manual OCP-lab source candidate; actual Controller/Owner inputs required.
+  sourceRepos:
+  - https://github.com/seokpan/seokpan-hybrid-gitops.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: seokpan-argotest
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  namespaceResourceWhitelist: []
+  namespaceResourceBlacklist:
+  - group: '*'
+    kind: '*'
