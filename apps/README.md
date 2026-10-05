@@ -92,3 +92,6 @@ Recovery는 별도로 공급한 승인 Namespace와 Local Harbor Host(`RECOVERY_
 5. Recovery 접속·새 Redis 상태 처리·완료 기록/신규 게임 업무를 확인한 Render·Image·Config/CA·Secret 논리 참조·도구를 장애 전에 로컬에 보존한다. 전체 Bundle 작성·C의 수락과 D의 기존 실제 Run은 아직 남았다. 탐지부터 업무 재개, Backup Data 시각 근거와 최신성을 측정한다. [h-docs PR #30](https://github.com/seokpan/seokpan-hybrid-docs/pull/30)의 main 반영으로 현재 설계 요구사항은 **RTO 10분·영속 DB RPO 30분·운영 중 Portable Backup 15분**이다. 선택 근거·기능/접속 범위·미달 처리와 실행 Gate는 [03 §3-I.14.5](https://github.com/seokpan/seokpan-hybrid-docs/blob/ab116463fd1f1a75d54e734c3c1c99cd098f639d/design/03_DETAILED_DESIGN.md#recovery-design-decision-20261005)를 따른다. 예약 주기만으로 RPO를 보장하지 않으며 실제 성공 Data 간격·로컬 완성 지연·시점 불확실성 및 실제 사용 사본의 나이를 검증한다. 이전 30분·90분·1시간은 승인 이력이며 기존 Run을 소급 변경하지 않는다. 로컬 합성 부분 Run PASS를 실제 전체 RTO/RPO·최종 T18 달성으로 확대하지 않는다.
 
 Cloud 선언 후보는 [cloud](overlays/cloud/README.md)에 별도 후속 변경으로 연결한다. 기본 Render는 기동 보류 0이며 승인된 FE/BE 각 3 Replica·PDB minAvailable 2·AZ soft spread는 분리된 목표 Preview다. 실제 Source 상태 공유·1 Replica 실측·Pool/자원·입력/권한·Runtime 검증 뒤 리뷰한 변경으로 활성화한다. Cloud Source Build를 ROSA 생성·배포 완료로 표시하지 않는다.
+
+
+첫 OCP 인계의 Project/Application·Owner·입력·Migration/삭제 보호와 실제 시험 순서는 [lab 제어 선언](../clusters/ocp-lab/README.md)·[인계 묶음](../handoff/OCP_FIRST_DEPLOYMENT.md)을 따른다. App Overlay 자체는 Namespace/Secret/Job을 소유하지 않으며 기존 0 Replica/미확정 입력을 유지한다.
