@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from render_release import app_manifest_blockers
+
 
 ROOT = Path(__file__).resolve().parents[1]
 KUSTOMIZE = os.environ.get("KUSTOMIZE", shutil.which("kustomize") or "kustomize")
@@ -47,6 +49,16 @@ class CloudManifestBoundaries(unittest.TestCase):
                 container = deployment["spec"]["template"]["spec"]["containers"][0]
                 self.assertIn("ecr-input-required.invalid/seokpan-fnd-", container["image"])
                 self.assertIn("INPUT_REQUIRED", container["image"])
+
+    def test_cloud_requires_explicit_lifecycle_rollout_input_before_multi_replica_release(self):
+        for preview in self.renders:
+            data = self.resources(preview, "ConfigMap")[0]["data"]
+            self.assertEqual(data["SEOKPAN_GAME_LIFECYCLE_MODE"], "INPUT_REQUIRED")
+        blockers = app_manifest_blockers(yaml.safe_dump_all(self.renders["target"]), "cloud")
+        self.assertIn("multi-replica Cloud activation requires reviewed captured lifecycle configuration", blockers)
+        # This keeps a rollout decision unresolved instead of silently inheriting
+        # legacy or enabling captured. Actual Data/old-writer/2-Pod/Gateway gates
+        # remain the App rollout owner's responsibility.
 
     def test_target_pdb_selectors_namespace_and_rollout_match_each_workload(self):
         workloads = {r["metadata"]["name"]: r for r in self.resources("target", "Deployment")}

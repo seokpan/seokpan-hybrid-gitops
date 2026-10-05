@@ -30,6 +30,20 @@ spec:
           command: [redis-server]
           args: [/etc/seokpan/redis/redis.conf]
           ports: [{name: redis-tls, containerPort: 6379, protocol: TCP}]
+          # Listener-only probes: a TCP connection does not validate TLS, AUTH,
+          # persistence or business readiness. Backend and C's cases do that.
+          # Initial timing candidates reuse the App probe budget; measure before
+          # activation. Do not add an unmeasured restart-triggering liveness probe.
+          startupProbe:
+            tcpSocket: {port: redis-tls}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket: {port: redis-tls}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

@@ -107,12 +107,14 @@ jobs:
           app_count = loader.loadTestsFromName("test_app_manifests").countTestCases()
           cloud_count = loader.loadTestsFromName("test_cloud_manifests").countTestCases() if cloud_tests else 0
           ocp_count = loader.loadTestsFromName("test_ocp_control_manifests").countTestCases()
-          minimum = 32 if cloud_tests else 24
-          if app_count < 18 or ocp_count < 6 or (cloud_tests and cloud_count < 8) or suite.countTestCases() < minimum:
+          safety_count = loader.loadTestsFromName("test_release_safety_manifests").countTestCases()
+          minimum = 39 if cloud_tests else 30
+          if app_count < 18 or ocp_count < 6 or safety_count < 6 or (cloud_tests and cloud_count < 9) or suite.countTestCases() < minimum:
               raise SystemExit("Expected source tests are missing or not discovered")
           record = {"source": os.popen("git rev-parse HEAD").read().strip(),
                     "pattern": pattern.group(1), "discovered": suite.countTestCases(),
-                    "app": app_count, "ocp": ocp_count, "cloud": cloud_count, "minimum": minimum}
+                    "app": app_count, "ocp": ocp_count, "release_safety": safety_count,
+                    "cloud": cloud_count, "minimum": minimum}
           pathlib.Path(sys.argv[1]).write_text(json.dumps(record), encoding="utf-8")
           print(json.dumps(record))
           PY

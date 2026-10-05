@@ -21,6 +21,12 @@
 - App base/lab는 FE/BE Deployment·Service·비민감 ConfigMap·Route를 다룬다. App Overlay에 Namespace·Secret·Migration Job·Application·AppProject 객체를 섞어 상시 관리하지 않는다. GitOps 플랫폼 선언과 App 선언, 별도 Secret 공급·단일 Migration 실행을 구분한다.
 - 최소 lab 제어 후보의 경로·선택 방식은 [clusters/ocp-lab](../clusters/ocp-lab/README.md)에 있다. 기존 승인 경로 대조용 `reuse`, 새 Root의 `bootstrap`/`root`, 승인한 새 Namespace가 필요한 때만 사용하는 `new-namespace`는 서로 다른 선택이다. 별도 `operations/ocp-lab/migration` Job은 suspended 입력 대기 후보이고 Root/App의 상시 Sync 경로에 포함하지 않는다.
 
+### 공유 Controller의 기존 기록과 적용 전 확인
+
+[h-gitops Issue #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5) 본문과 [PR #9 D 리뷰](https://github.com/seokpan/seokpan-hybrid-gitops/pull/9#pullrequestreview-5413591924)는 Application을 **공유 `openshift-gitops` Namespace**에 등록하고, 대상 **`seokpan-argotest`의 managed-by 라벨을 유지**하며, **4조에 사전 공지**하도록 기록한다. 이는 D가 전달한 환경 조건이며 이번 Source 작업에서 클러스터를 새로 조회하거나 공유 사용 수락·공지 발송을 완료했다는 뜻이 아니다.
+
+D/공유 Owner가 적용 직전에 실제 Controller/Instance·권한·Context와 기존 Project/Application의 Owner를 재확인한다. 기존 managed-by 라벨의 정확한 값과 Controller 일치를 확인하고 보존한다. 새 Namespace를 승인하는 경로는 필요한 managed-by 값·생성/관리 Owner·지원 동작을 먼저 수락한다. 값이 확인되지 않은 라벨을 새로 넣거나 기존 라벨을 변경하지 않는다. 4조 사전 공지의 수행자·대상 범위·시점·공유 사용 수락은 #5에 남긴다. 이 문서 작업에서는 공지를 발송하지 않았고 `gitops-controller-input-required`를 실제 Namespace 값으로 활성화하지 않는다.
+
 ## 2. 지금 B가 만드는 묶음과 담당별 병행 작업
 
 | 담당 | 지금 준비할 결과 | 실제 실행 때 확인할 결과 |
@@ -38,20 +44,23 @@ Source·진단 Render·Case·Owner 인계는 A의 모든 기반 작업을 기다
 
 | 최소 입력 | 소비·확인 범위 | 공급·확인 담당 | 없을 때 막는 작업 |
 |---|---|---|---|
-| App 전체 Commit → FE/BE Image Mapping | Build/Test/Scan 결과, 전체 Digest·플랫폼, 실제 lab Registry·Pull 방식/CA. 과거 Image 캐시만으로 새 Pull 성공을 판정하지 않음 | D Build/Pull, B Source 대조 | 새 Image 활성화·실제 App 검증 |
-| 실제 lab Context·Namespace·Caller/RBAC | 사용 대상·권한, 기존/신규 객체 Owner, API/CRD·Argo/GitOps Operator 버전, Repo 읽기 인증 경로 | D와 공유 Owner, B 선언 대조 | 실제 플랫폼 변경·Application 등록·Sync |
-| Project/Application·Repo/Revision/Path | 정확한 GitOps 전체 SHA와 `apps/overlays/lab`, 허용 Repo·Namespace·Resource 종류, 초기 Sync/삭제 경계 | B 선언, D/Owner 환경 확인 | 해당 Application 등록/변경·최초 Sync |
+| App 전체 Commit → FE/BE Image Mapping | Build/Test/Scan 결과, 전체 Digest·플랫폼, 실제 lab Registry·Pull 방식/CA. 활성화는 `images.digest`와 출력의 `@sha256` 고정, Job은 같은 Backend Digest. 과거 Image 캐시만으로 새 Pull 성공을 판정하지 않음 | D Build/Pull, B Source 대조 | 새 Image 활성화·실제 App 검증 |
+| 실제 lab Context·Namespace·Caller/RBAC | #5의 공유 `openshift-gitops`·대상 `seokpan-argotest` 기록을 실제 Controller/Instance·Context/권한·Owner·API/CRD·Argo/Operator 버전과 재대조, Repo 읽기 인증 경로 | D와 공유 Owner, B 선언 대조 | 실제 플랫폼 변경·Application 등록·Sync |
+| 공유 사용·Namespace 관리 | 기존 managed-by 라벨 값/Controller 일치·보존, 새 Namespace라면 승인 managed-by/Owner. 4조 사전 공지 수행·시점·범위와 공유 사용 수락 | D와 공유 Owner | 공유 Controller 등록/변경·해당 Namespace 최초 Sync |
+| Project/Application·Repo/Revision/Path | 정확한 GitOps 전체 SHA와 `apps/overlays/lab`, 허용 Repo·Namespace·Resource 종류, 초기 Sync/삭제 경계. 기존 `default` 등의 실효 범위를 제한 `seokpan-ocp-lab-app` 후보와 비교 | B 선언, D/Owner 환경 확인 | 해당 Application 등록/변경·최초 Sync |
 | DB 대상·CA·Schema·Runtime 계정 | `backend-db-runtime`의 `SEOKPAN_IDENTITY_DATABASE_URL`/`SEOKPAN_GAME_DATABASE_URL`; `backend-database-ca`의 `ca.crt`; 승인 Host/Port/DB·SAN·수명·목적별 GRANT·Schema 개정 | C 계약·수락, D lab 공급 협업, B 소비 대조 | DB 양성/음성 연결·Ready·DB 업무 |
 | Redis TLS/AUTH 대상·CA | `backend-redis-runtime`의 `SEOKPAN_REDIS_AUTH_TOKEN`; `backend-redis-ca`의 `ca.crt`; `rediss` 대상·Port/DB·SAN·수명·AUTH 개정 | C 계약·수락, D lab 공급 협업, B 소비 대조 | Redis 양성/음성 연결·Ready·Runtime 업무 |
 | 비민감 설정·Route | `runtime.env`의 Profile/허용 Origin/예상 대상과 같은 Host의 FE/API/WSS Route, 실제 DNS/TLS 경로 | B 선언, D lab 경로 확인 | 외부 접속·FE/API/WSS·업무 검증 |
 | Secret/CA 공급과 교체 | 별도 Owner의 공급 완료·개정, App 참조 일치, 보호 보관·회수 범위. Operator 생성 객체는 덮어쓰지 않음 | 지정 공급자 C/D, B 소비 연결 | 최초 App 활성화·해당 개정 재접속 |
-| Migration 필요 여부와 승인 | 대상·현재 Schema·승인 App Image/Action; `backend-db-migration`의 `SEOKPAN_MIGRATION_DATABASE_URL`과 CA의 보호 공급 참조, 필요한 경우 별도 단일 실행과 결과 | C 판단/수락, B App 계약, 지정 실행자 | 필요한 Schema 준비·해당 App Sync |
+| Migration 필요 여부와 승인 | 대상·현재 Schema·동일 Backend Digest/Action; `backend-db-migration`의 `SEOKPAN_MIGRATION_DATABASE_URL`과 DB CA 보호 공급 참조, ConfigMap Hash·C 수락 deadline·유일한 Run·필요한 경우 단일 실행과 결과 | C 판단/수락, B App 계약, 지정 실행자 | 필요한 Schema 준비·해당 App Sync |
 
 DB/Redis 연결 설정과 CA/Secret 논리 이름은 [apps/README.md](../apps/README.md)에 있다. 고정 이름 Secret/CA를 교체했다고 기존 Pod의 환경변수·TLS Context가 새 개정으로 바뀐 것으로 보지 않는다. 승인한 Backend 교체와 새 연결·업무 검증까지 같은 개정으로 기록한다. Migration 목적 인증정보를 일반 App Deployment에 공급하지 않는다.
 
 ## 4. Project/Application 경로 선택
 
 **경로 A — 기존 승인 Project/Application 사용:** D와 공유 Owner가 기존 대상의 허용 Repo/Revision/Path·Namespace·Resource 범위·관리 주체·초기 수동 Sync/삭제 보호를 확인하면 그 Application을 지정 lab 전체 SHA에 고정한다. 확인되지 않은 기존 객체를 덮어쓰거나 플랫폼 Owner를 가져오지 않는다. 승인 기존 경로가 충분하면 신규 Root·전체 Cloud 정책·UWM·완성 복구 Bundle을 먼저 요구하지 않는다.
+
+기존 Project가 `default`처럼 넓은 Repo·Destination·Resource 권한을 허용한다면, [제한 AppProject 후보](../clusters/ocp-lab/root/app-project.yaml)의 고정 Repo·`seokpan-argotest`·Deployment/Service/ConfigMap/Route와 cluster-scope 차단을 비교한다. 제한 Project를 기존 Controller에서 재사용하는 경우도 새 전체 Root가 반드시 필요한 것은 아니다. D/Owner와 해당 Project의 등록·변경 원본/단일 Owner 및 실제 RBAC를 수락한 뒤 `reuse` Application의 Project 참조를 같은 승인 개정으로 맞춘다. Source 후보의 제한은 실제 Controller 권한이 자동으로 좁아졌다는 증거가 아니다.
 
 **경로 B — 새 단독 lab 플랫폼 경로 준비:** 기존 경로를 사용할 수 없으면 B가 별도 GitOps 플랫폼 원본으로 제한된 Project/Application과 필요한 Namespace 관리 경계를 준비한다. 실제 Operator/Argo Namespace·API/CRD·공유 설치의 사용 방식·권한은 D/Owner의 확인 입력으로 고정한다. 같은 객체를 기존 Argo·새 Root·Bootstrap이 중복 관리하지 않게 한다. 새 Operator 설치가 필요할 때만 Infra의 최소 Bootstrap 예외를 별도 검토하고, 이후 Project/Application/배포 원본은 GitOps로 관리한다.
 
@@ -88,7 +97,7 @@ kustomize build operations/ocp-lab/migration
 
 1. D/Owner가 실제 Context·Caller·Namespace·Argo/Operator 버전·Project/Application 경로를 확인한다. B는 Root/Platform/App 단일 Owner·초기 수동 Sync·Prune/finalizer/Namespace 보호를 대조한다.
 2. B/C/D가 최소 입력표의 공급 개정·수신·누락을 확인한다. Image Digest·Route/Origin·DB/Redis 대상·CA/SAN·Schema·Secret 참조가 같은 승인 조합인지 확인한다. App 기동은 계속 보류한다.
-3. C와 현재 Schema/대상을 확인한다. **Migration이 필요한 경우만** 승인한 별도 단일 실행으로 처리하고 결과·Schema를 수락한다. 이미 준비된 Schema에 불필요한 DDL을 실행하지 않는다. Migration을 App의 상시 자동 Sync/SelfHeal 대상으로 만들지 않는다.
+3. C와 현재 Schema/대상을 확인한다. **Migration이 필요한 경우만** 승인한 별도 단일 실행으로 처리하고 결과·Schema를 수락한다. 이미 준비된 Schema에 불필요한 DDL을 실행하지 않는다. Migration을 App의 상시 자동 Sync/SelfHeal 대상으로 만들지 않는다. [Job 입력 검사와 DB 전용 설정 근거](../clusters/ocp-lab/README.md#migration은-app-sync-hook이-아니다)를 따라 App/Job Backend Digest·ConfigMap Hash·DB 대상/CA·별도 Migration 자격·C 수락 deadline을 대조한다. 후보의 300초를 실제 쓰기 작업의 승인 상한이나 측정 성공으로 취급하지 않는다.
 4. 승인 입력을 별도 활성화 개정에 반영한다. lab 최초 FE/BE 각 1의 후보·실측 자원·Image/Pull·설정·기동 보류 해제·삭제 경계를 리뷰한다. 최종 GitOps 전체 SHA와 App/Digest/설정/Secret/Schema 조합을 고정한 뒤 아래 입력 검사를 수행한다.
 
    ```bash
@@ -107,11 +116,20 @@ kustomize build operations/ocp-lab/migration
 | Startup/Live/Ready | Backend Pod/Service의 `/health/startup`, `/health/live`, `/health/ready`를 실제 DB/Redis 조건과 연결. Frontend `/health/live` 200과 Backend Ready를 구분 | Pod/Kubelet Probe·Service 대상과 응답·Data 준비 조건/변화. 공개 Host의 FE 200만으로 Backend 준비 판정 금지 |
 | DB·Redis TLS/AUTH 양성 | 승인 대상/목적 계정·Schema·CA/SAN·AUTH 개정에서 정상 접속. Redis는 TLS+별도 AUTH | 비밀값을 제거한 연결/권한/대상 결과·실제 Data 조건·C 수락 |
 | 접속 음성·CA/Hostname | 틀린 대상·CA·Hostname·AUTH·목적 권한 조건에서 실패하며 비밀값을 노출하지 않음. TLS 검증·AUTH를 완화해서 통과시키지 않음 | 격리된 시험 조건·기대 거부/실제 거부·Ready/로그·오류 원인. 공유 DB/실사용 Credential 변경 금지 |
-| Schema·필요한 Migration | 승인 대상/현재 Schema를 확인하고 필요한 변경만 단일 실행·결과 수락. 불필요한 실행·App 재Sync에 따른 DDL 반복 없음 | 필요/불필요 판단, 승인 Ref·Image·실행 횟수·종료/Schema 결과·C 수락 |
+| Schema·필요한 Migration | 승인 대상/현재 Schema·같은 App/Job Backend Digest와 설정/DB CA를 확인. C가 수락한 Action/deadline에서 필요한 변경만 단일 실행·결과 수락. timeout/실패 후 상태를 먼저 확인하고 불필요한 실행·App 재Sync DDL 반복을 하지 않음 | 필요/불필요 판단, Source 입력 검사·승인 Ref·Digest·deadline·실행 횟수·실패/종료/Schema 상태와 C 수락 |
 | FE/API/WSS·인증 | 같은 승인 Host에서 HTTPS FE·`/api/v1`·`/ws/v1`, 허용 Origin·실제 사용자 인증/권한, WSS 연결·재접속 확인 | 브라우저/Client 조건·Route/업무 응답·연결/실패·재인증. Route `timeout-tunnel: 1h`를 장시간 성공 측정으로 취급하지 않음 |
 | 대표 업무·오류·상태 | 현재 지원하는 로그인/Guest·로비/방·Ready/게임·투표/착수·종료/결과를 실제 계약대로 확인. 오류·권한 거부·접속 단절에서 미확인 쓰기를 중복 재실행하지 않음 | 지원 기능/제한·기대/실제 결과·DB/Redis 정합·완료/불명확 결과·후속 결함 링크 |
 | 교체·종료·Drain 경계 | 승인한 lab 대상의 Pod 교체/종료·재접속/업무 상태 확인. 불명확한 게임을 정상 완료로 기록하지 않음. 공유 Node Drain은 Owner와 범위·영향 확인 후 별도 실행 | 종료 시간선·이벤트·WSS/사용자 안내·현재 업무/DB 결과. 미실행 Node Drain은 NOT RUN, lab 단일 Replica를 Cloud 무중단 증거로 사용하지 않음 |
 | Argo 동작·Cloud 차이 | Deployment의 Pod 재생성과 Argo SelfHeal을 구분. 자동 Sync/SelfHeal은 최초 수락 후 별도 승인 개정으로 시험. OCP와 ROSA의 Data/Pull/권한/규모 차이를 후속 Case에 연결 | 실제 변경·Controller 동작·같은 조합의 Run, PASS/FAIL/PARTIAL/NOT RUN 및 ROSA 재시험 범위 |
+| 실습 정리·잔존 확인 | 현재 Application에는 삭제 finalizer가 없으므로 Application만 삭제해도 배포 객체는 남는다. 아래 수동 정리를 기본으로 선택하고 해당 lab App에만 별도 승인한 finalizer 경로를 대조한다 | 정리 전/후 객체 목록·단일 Owner·허용 삭제 범위·잔존·보존 결과·실제 수행자/공유 Owner 수락. 공유 Namespace/Secret/Data/Operator 삭제는 제외 |
+
+### 실습 정리 방법 선택
+
+1. D의 시험 결과·Source/Image/설정·원 Run을 보존하고 B 인계 및 공유 Owner의 사용 종료·대상 범위를 수락한다. 삭제 전 `seokpan-argotest`의 **이 App이 관리한 Deployment/Service/Route/생성 ConfigMap 목록**과 Owner·사용자를 기록한다. Namespace 전체를 삭제 목록으로 삼지 않는다. 별도 Migration Job은 App 관리 객체가 아니므로 승인한 Run/Owner의 정리 범위로 따로 판단한다.
+2. **기본 수동 정리:** App의 Sync/SelfHeal 및 재등록 경로를 승인 범위에서 보류하고 Application 삭제/등록 해제를 처리한다. finalizer가 없으므로 App 객체가 없어졌다는 사실을 리소스 정리 성공으로 쓰지 않는다. 확인한 이 App 객체만 별도 수동 정리하고 잔존/다른 사용 여부를 재확인한다. 공유 Secret/CA·DB/Redis·Namespace·Controller와 기존 1차/복구 자산을 일괄 삭제하지 않는다.
+3. **별도 승인한 cascade 대안:** D/Owner가 실제 Argo 버전 동작·현재 보호 annotation·관리 객체 목록을 검토한 경우에만 **해당 lab App Application 하나**의 finalizer/삭제 보호 개정을 별도로 승인한다. Root/Platform/공유 Namespace까지 cascade 범위를 넓히지 않는다. 격리된 범위에서 기대/실제 삭제·보호 대상 잔존을 새 Run으로 확인한다. 현재 Source는 이 finalizer를 추가하지 않았으며 자동 cascade 승인이 아니다.
+
+이전 #5의 cascade 전제는 현재 finalizer 없는 후보에 그대로 적용하지 않는다. 어느 방법인지, 아직 미수락/미실행인지, 실제 정리한 정확한 범위와 남은 객체를 #5와 원 Run에 기록한다.
 
 ## 7. 제출·수신과 다음 행동
 

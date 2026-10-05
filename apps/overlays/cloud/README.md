@@ -10,6 +10,12 @@ ROSA Cloud App에 사용할 환경별 선언을 실제 Kustomize Overlay로 연�
 
 Cloud 공통 입력은 `runtime/`에 두고 기본 실행 보류 Preview와 목표 Preview가 같은 Source를 소비한다. ConfigMap의 내용 Hash를 유지해 승인된 연결 설정 변경이 Backend Pod Template 참조에도 반영되도록 했다. Secret/CA 개정 교체·Runtime 재접속은 별도 공급/실행 Case로 확인한다.
 
+## Lifecycle 입력과 다중 Backend 승격
+
+App main `c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3`의 `Settings`는 `legacy`/`captured`를 허용한다. 기존 Cloud Source는 base의 `legacy`를 그대로 상속했으며 Cloud 전용 Override가 없었다. 이번에는 `runtime/runtime.env`에 `SEOKPAN_GAME_LIFECYCLE_MODE=INPUT_REQUIRED`를 명시해 확인되지 않은 모드를 자동 상속하거나 임의로 `captured`를 켜지 않는다. 기본 0 Replica와 3 Replica 정적 Preview의 입력 대기 상태는 유지한다. legacy가 모든 기능에서 단일 Pod 전용이라는 판정은 하지 않는다.
+
+`tools/render_release.py`는 lab/Cloud의 FE/BE 및 initContainer가 Registry의 정확한 `@sha256` Image를 참조하도록 검사하고, Cloud Backend가 2개 이상일 때 `captured`를 명시한 검토된 ConfigMap을 요구한다. 이는 Source 입력 보조 Gate이며 `captured` 선언만으로 실제 다중 Pod 업무 안전이 확인됐다는 뜻이 아니다. [App 전환 근거](https://github.com/seokpan/seokpan-hybrid-app/blob/c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3/backend/docs/game-lifecycle-rollout.md)의 기존 writer 정지·Data 분류/보존·동일 Image/모드·2 Replica 실패 주입·Gateway/업무 수락 후 별도 활성화 변경으로 값을 확정한다. 미수락 조합을 일반 Rolling Update로 혼합하지 않는다. 실제 수락과 실패/제한은 App #4·GitOps #10의 새 Run에 기록한다.
+
 ## 연결 입력과 Ownership
 
 | 범위 | 현재 선언/소비 계약 | 실제 입력과 남은 Gate |

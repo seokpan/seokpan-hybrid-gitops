@@ -9,6 +9,11 @@ metadata:
     seokpan.io/release-state: input-required-no-runtime-validation
 spec:
   suspend: true
+  # Five minutes is an initial ceiling for the held read-only `current` check,
+  # not an approved DDL execution budget or a recovery target. The reviewed
+  # active Job must use C's explicit deadline and recheck partial results after
+  # timeout before any retry; terminating a Job does not roll back DB changes.
+  activeDeadlineSeconds: 300
   parallelism: 1
   completions: 1
   backoffLimit: 0
