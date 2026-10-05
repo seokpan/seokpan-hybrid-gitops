@@ -20,6 +20,63 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def app_manifest_blockers(rendered, environment):
+    """Check immutable App images and declared multi-replica lifecycle inputs.
+
+    This verifies Source composition only. A digest's format is not a Scan/Pull
+    approval and captured mode is not proof that rollout/data/runtime gates pass.
+    """
+    blockers = []
+    try:
+        resources = list(yaml.safe_load_all(rendered))
+        if not resources or any(not isinstance(r, dict) for r in resources):
+            raise ValueError
+        deployments = [r for r in resources if r.get("kind") == "Deployment"]
+        names = [r["metadata"]["name"] for r in deployments]
+        if names.count("backend") != 1 or names.count("frontend") != 1:
+            blockers.append("App release requires one backend and frontend Deployment")
+        workloads = [r for r in resources if r.get("kind") in
+                     {"Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "CronJob"}]
+        for workload in workloads:
+            if workload["kind"] == "Pod":
+                pod = workload["spec"]
+            elif workload["kind"] == "CronJob":
+                pod = workload["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+            else:
+                pod = workload["spec"]["template"]["spec"]
+            if not pod.get("containers"):
+                raise ValueError
+            for container in [*pod["containers"], *pod.get("initContainers", [])]:
+                image = container.get("image", "")
+                if not isinstance(image, str) or re.fullmatch(
+                        r"[a-zA-Z0-9.-]+(?::[0-9]+)?/[a-z0-9._/-]+"
+                        r"(?::[a-zA-Z0-9_.-]+)?@sha256:[0-9a-f]{64}", image) is None:
+                    blockers.append("App and initContainer images must use registry digest references")
+        if environment == "cloud":
+            backend = next(r for r in deployments if r["metadata"]["name"] == "backend")
+            replicas = backend["spec"].get("replicas", 1)
+            if not isinstance(replicas, int) or isinstance(replicas, bool):
+                raise ValueError
+            if replicas > 1:
+                container, = backend["spec"]["template"]["spec"]["containers"]
+                env_from, = container["envFrom"]
+                if set(env_from) != {"configMapRef"} or \
+                        env_from["configMapRef"].get("optional", False) or \
+                        set(env_from["configMapRef"]) != {"name"}:
+                    raise ValueError
+                config_name = env_from["configMapRef"]["name"]
+                config, = [r["data"] for r in resources if r.get("kind") == "ConfigMap"
+                           and r["metadata"]["name"] == config_name
+                           and r["metadata"].get("namespace") == backend["metadata"].get("namespace")]
+                if any(e.get("name") == "SEOKPAN_GAME_LIFECYCLE_MODE" for e in container.get("env", [])):
+                    blockers.append("Cloud lifecycle must not override its reviewed configuration")
+                if config.get("SEOKPAN_GAME_LIFECYCLE_MODE") != "captured":
+                    blockers.append("multi-replica Cloud activation requires reviewed captured lifecycle configuration")
+    except (AttributeError, KeyError, TypeError, ValueError, IndexError, StopIteration, yaml.YAMLError):
+        blockers.append("App manifest structure or lifecycle configuration is invalid")
+    return list(dict.fromkeys(blockers))
+
+
 def recovery_manifest_blockers(rendered, namespace, registry):
     """Check declared Recovery boundaries, never actual Secret values or runtime.
 
@@ -130,6 +187,13 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         if "volumeClaimTemplates" in redis["spec"] or \
                 container.get("ports") != [{"name": "redis-tls", "containerPort": 6379, "protocol": "TCP"}]:
             blockers.append("Recovery Redis must not create storage or expose a plaintext port")
+        for probe_name in ("startupProbe", "readinessProbe"):
+            probe = container.get(probe_name, {})
+            if probe.get("tcpSocket") != {"port": "redis-tls"} or \
+                    any(key in probe for key in ("exec", "httpGet", "grpc")) or \
+                    any(not isinstance(probe.get(key), int) or isinstance(probe.get(key), bool)
+                        or probe[key] <= 0 for key in ("periodSeconds", "timeoutSeconds", "failureThreshold")):
+                blockers.append("Recovery Redis requires reviewed TLS-listener startup/readiness probes")
         security = container.get("securityContext", {})
         if pod.get("automountServiceAccountToken") is not False or \
                 pod.get("enableServiceLinks") is not False or \
@@ -246,6 +310,8 @@ def main():
     if args.environment == "recovery":
         blockers.extend(recovery_manifest_blockers(result.stdout, args.recovery_namespace,
                                                     args.recovery_registry))
+    else:
+        blockers.extend(app_manifest_blockers(result.stdout, args.environment))
     if blockers:
         print("release withheld: " + ", ".join(blockers), file=sys.stderr)
         return 2

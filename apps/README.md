@@ -32,6 +32,12 @@ Redis URL은 `rediss://<host>:<port>/0`이며 인증정보를 넣지 않는다. 
 
 Migration 목적 인증정보는 일반 App Deployment에 넣지 않으며 자동 Job도 포함하지 않는다. Schema/대상/Image/승인 Ref를 확인한 별도 단일 실행이 필요하다. Runtime 계정 분리, Data Restore/Cutover는 C의 작업 경계를 유지한다.
 
+별도 `operations/ocp-lab/migration` 후보는 suspended·읽기 전용 `current`·300초 제한이며 실제 실행/DB 쓰기 승인과 구분한다. App main `c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3`의 `migration_gate.run → MigrationSettings(DatabaseTargetSettings) → migrations/env.py → DB engine` 경로는 DB 설정/CA만 소비하고 Redis 설정/CA를 로드하지 않는다. 공유 `backend-config`의 Redis 키는 MigrationSettings에서 소비하지 않으므로 현재 Job에는 Redis CA Mount를 추가하지 않는다. App Image 개정으로 이 경로가 바뀌면 다시 대조한다. 동일 Backend Digest/ConfigMap Hash·DB 대상/CA·Migration 전용 자격·C 수락 Action/deadline은 [별도 Job 안내](../clusters/ocp-lab/README.md#migration은-app-sync-hook이-아니다)의 Source 검사와 실제 수락으로 연결한다.
+
+lab 활성화는 승인 FE/BE Image를 Kustomize `images.digest`로 고정하고, 같은 Backend Digest를 별도 Migration Job에 연결한다. Tag만 같은 것이 동일 Build를 증명하지는 않는다. 실제 Build/Test/Scan·Digest/플랫폼·Pull은 D의 수락 조건이며 형식 검사로 대신하지 않는다. 입력 대기 후보의 `newTag: INPUT_REQUIRED`는 활성화 Image가 아니다.
+
+공유 Controller 입력은 #5의 `openshift-gitops`·`seokpan-argotest`·managed-by 유지·4조 사전 공지 기록을 적용 전 실제 Owner/권한/라벨 값과 재대조한다. 기존 `default` Project의 실효 허용 범위가 넓으면 제한 AppProject 후보와 비교하고, 기존 Controller의 단일 관리 경로에서 수락한 Project만 사용한다. 값/권한·공유 사용 수락을 확인하기 전 Source placeholder나 기존 라벨을 활성화/변경하지 않는다. 상세 선택과 정리 Case는 [lab 제어 안내](../clusters/ocp-lab/README.md)·[첫 배포 인계](../handoff/OCP_FIRST_DEPLOYMENT.md)를 따른다.
+
 ### 새 Recovery Redis Source와 C/A/D의 실제 입력
 
 `redis.yaml`의 논리 이름은 `recovery-redis`이며 격리 Namespace 안의 Headless `ClusterIP` Service만 선언한다. Backend의 `rediss://recovery-redis.<격리 Namespace>.svc:6379/0`과 예상 Host를 함께 바꿔 같은 대상을 검증한다. 체크인 Namespace `recovery-input-required`는 승인된 실제 Namespace가 아니다. 다른 환경·1차 Redis 주소를 연결하거나 `FLUSHALL`로 초기화하는 절차는 넣지 않았다.
@@ -49,6 +55,8 @@ Migration 목적 인증정보는 일반 App Deployment에 넣지 않으며 자�
 현재 PVC 이름은 **입력 대기 Volume 인터페이스**이며 PVC·StorageClass·영속성 정책 채택이 아니다. Source에 Namespace/Secret/PVC 객체·`volumeClaimTemplates`를 만들지 않는다. C/A가 승인한 다른 새 Volume 방식으로 교체할 수 있고 Renderer는 PVC만 강제하지 않는다. 이름만으로 실제 데이터가 비어 있거나 1차 자산과 격리됐음을 증명하지 않는다. AOF·`maxmemory`·Resource Requests/Limits·Redis 버전·최종 Volume 정책은 선택하지 않았다.
 
 Runtime/보호 AUTH Include를 먼저 읽고 공개 TLS 설정을 뒤에 두어 그 Include가 평문 Port/TLS 설정을 덮어쓰지 못하게 한다. Renderer는 Redis와 같이 Directive 이름의 대소문자를 구분하지 않으며 공개 파일에 허용한 Transport/Process 설정의 추가 중복·AUTH·외부 복제 지시를 거부한다. C는 외부 Include 내용에도 인증·복제·쓰기 정책의 모순이 없는지 검토한다. Secret 파일 Mount는 읽기 전용이며 고정 UID/GID·`fsGroup`을 지정하지 않았다. 실제 SCC·임의 UID에서 Key/설정 읽기 권한과 `/data` 쓰기 권한이 맞는지는 C/A/D의 실행 검증이다. Secret를 읽을 수 있다는 선언이 실제 파일 권한 검증은 아니다.
+
+새 Recovery Redis의 `tcpSocket` startup/readiness는 TLS Port `6379`의 **TCP Listener 도달 여부만** 확인한다. TLS Handshake·CA/Hostname·AUTH·Redis 명령·Backend 연결/업무 준비를 증명하지 않는다. 별도 실행 Case에서 이를 확인한다. 초기 Probe 간격/제한은 미측정 후보이며 C/D의 실제 Image·기동/부하 조건으로 대조한다. startup 실패도 재시작으로 이어질 수 있어 실제 기동 Budget·실패 원인·재시작 영향을 확인한다. liveness는 장애 원인·부하·재시작 영향이 확인되기 전 추가하지 않는다.
 
 ### 설정·Secret·CA 개정의 소비자 반영
 
@@ -79,6 +87,8 @@ RECOVERY_NAMESPACE="$REVIEWED_RECOVERY_NAMESPACE" RECOVERY_REGISTRY="$REVIEWED_R
 
 `tools/render_release.py`는 **Python과 PyYAML**로 실제 Kustomize v5.7.1의 출력에서 미해결 입력을 확인한다. Source CI의 Python 3.12/PyYAML 6.0.2와 Kustomize·실행 의존성을 오프라인에서 사용할지는 A/C/D가 장애 전 실제 도구 인계에서 검증·보존한다. `INPUT_REQUIRED`, 예약 `.invalid` 주소, `input-required` 표기, `replicas: 0` 또는 빈 출력이 있으면 실패하고 결과 파일을 만들지 않는다.
 
+lab 활성 Release는 FE/BE와 추가 Init Container까지 `Registry/Repository@sha256:<64자리 전체 Digest>` 형식을 검사한다. 이 검사만으로 Registry의 실제 Artifact·플랫폼·Build/Scan 수락·Pull 성공을 확인한 것으로 보지 않는다. Migration Job은 lab Overlay 밖의 별도 선언이므로 `tools/check_migration_manifest.py`로 최종 활성 lab Render의 Backend와 Digest·ConfigMap Hash·DB 대상/CA·별도 목적 자격·deadline을 대조하고 원 Run/승인으로 실제 수락을 연결한다.
+
 Recovery는 별도로 공급한 승인 Namespace와 Local Harbor Host(`RECOVERY_NAMESPACE`/`RECOVERY_REGISTRY` 또는 `--recovery-namespace`/`--recovery-registry`)를 요구한다. 위 예의 `REVIEWED_RECOVERY_NAMESPACE`/`REVIEWED_RECOVERY_REGISTRY`도 해당 Owner의 실제 승인 값을 먼저 받아 지정하는 입력이며 샘플 값으로 승인되지 않는다. 렌더된 App/새 Redis의 Namespace·단일 Replica·내부 Service/Backend 대상 일치, TLS-only 설정·보호 AUTH Include 순서·외부 AUTH/CA 파일 참조와 읽기 전용 Mount, Local Harbor Digest 형식, 다른 Owner의 Namespace/Secret/PVC를 생성하지 않는 경계를 검사한다. Backend는 필수 ConfigMap 단일 참조로만 비민감 설정을 공급하며 추가 `envFrom`·중복 `env` 이름·생성 ConfigMap 키의 직접 환경변수 Override도 거부한다. 공급한 이름·Digest 형식의 일치는 실제 Namespace 격리·Harbor/Image 승인·Secret 내용/AUTH 일치·TLS 연결·빈 저장소를 증명하지 않는다.
 
 입력 검사를 통과해도 기존 파일·Symlink는 덮어쓰지 않으며 새 출력 경로가 필요하다. 출력 파일은 기존 경로와 충돌하지 않을 때만 원자적으로 생성하므로 이전 검증 Artifact가 보존된다. 과거 파일을 이번 성공으로 취급하지 않는다. 통과는 이 Source 입력 검사의 통과이며 Context·Runtime/업무·Bundle 수락까지 증명하지 않는다. Apply/Sync와 외부 신규 조회는 하지 않는다.
@@ -92,6 +102,8 @@ Recovery는 별도로 공급한 승인 Namespace와 Local Harbor Host(`RECOVERY_
 5. Recovery 접속·새 Redis 상태 처리·완료 기록/신규 게임 업무를 확인한 Render·Image·Config/CA·Secret 논리 참조·도구를 장애 전에 로컬에 보존한다. 전체 Bundle 작성·C의 수락과 D의 기존 실제 Run은 아직 남았다. 탐지부터 업무 재개, Backup Data 시각 근거와 최신성을 측정한다. [h-docs PR #30](https://github.com/seokpan/seokpan-hybrid-docs/pull/30)의 main 반영으로 현재 설계 요구사항은 **RTO 10분·영속 DB RPO 30분·운영 중 Portable Backup 15분**이다. 선택 근거·기능/접속 범위·미달 처리와 실행 Gate는 [03 §3-I.14.5](https://github.com/seokpan/seokpan-hybrid-docs/blob/ab116463fd1f1a75d54e734c3c1c99cd098f639d/design/03_DETAILED_DESIGN.md#recovery-design-decision-20261005)를 따른다. 예약 주기만으로 RPO를 보장하지 않으며 실제 성공 Data 간격·로컬 완성 지연·시점 불확실성 및 실제 사용 사본의 나이를 검증한다. 이전 30분·90분·1시간은 승인 이력이며 기존 Run을 소급 변경하지 않는다. 로컬 합성 부분 Run PASS를 실제 전체 RTO/RPO·최종 T18 달성으로 확대하지 않는다.
 
 Cloud Overlay의 ECR·FE/BE 3 Replica·PDB minAvailable 2·AZ soft spread/자원 검증은 후속 범위다. Cloud 없는 이번 Build 결과를 ROSA 배포 완료로 표시하지 않는다.
+
+공통 `SEOKPAN_GAME_LIFECYCLE_MODE=legacy`는 lab/Recovery 최초 단일 Replica 후보에서 유지한다. PR #11 Cloud 후보에 이 값을 바꾸는 override가 없으므로 3 Backend Replica 활성화에 그대로 승계하면 안 된다. Cloud Release 도구의 다중 Replica 입력 검사는 검토한 `captured` 설정을 요구하지만, 설정 이름을 바꾼 것만으로 다중 Pod 업무 안전·기존 Runtime 전환이 수락되지는 않는다. [h-app Issue #4](https://github.com/seokpan/seokpan-hybrid-app/issues/4)의 기능/상태·현재 게임·혼합 Image/설정·Worker 전환 조건과 실제 1/3 Pod 시험의 수락을 먼저 연결한다. 현재 후보를 임의로 `captured`로 활성화하거나 실제 Cloud PASS로 표시하지 않는다.
 
 
 첫 OCP 인계의 Project/Application·Owner·입력·Migration/삭제 보호와 실제 시험 순서는 [lab 제어 선언](../clusters/ocp-lab/README.md)·[인계 묶음](../handoff/OCP_FIRST_DEPLOYMENT.md)을 따른다. App Overlay 자체는 Namespace/Secret/Job을 소유하지 않으며 기존 0 Replica/미확정 입력을 유지한다.

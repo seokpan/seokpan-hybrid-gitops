@@ -266,7 +266,11 @@ class AppManifestBoundaries(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             fixture = directory / "kustomize-fixture"
-            manifest = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: fixture\n"
+            manifest = yaml.safe_dump_all([
+                {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name},
+                 "spec": {"replicas": 1, "template": {"spec": {"containers": [{
+                     "name": name, "image": "harbor.fixture.test/" + name + "@sha256:" + "a" * 64}]}}}}
+                for name in ("backend", "frontend")])
             fixture.write_text(
                 "#!" + sys.executable + "\nimport sys\n"
                 "print('v5.7.1' if sys.argv[1] == 'version' else " + repr(manifest) + ", end='' if sys.argv[1] != 'version' else '\\n')\n",

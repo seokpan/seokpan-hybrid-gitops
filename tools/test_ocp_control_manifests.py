@@ -97,6 +97,7 @@ class OCPControlBoundaries(unittest.TestCase):
         job, = self.renders["operations/ocp-lab/migration"]
         self.assertEqual(job["kind"], "Job")
         self.assertTrue(job["spec"]["suspend"])
+        self.assertEqual(job["spec"]["activeDeadlineSeconds"], 300)
         self.assertEqual((job["spec"]["parallelism"], job["spec"]["completions"],
                           job["spec"]["backoffLimit"]), (1, 1, 0))
         pod = job["spec"]["template"]["spec"]
