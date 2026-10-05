@@ -1,0 +1,8 @@
+# Source review candidate. Resolve input/ownership and review before any Apply/Sync.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: seokpan-argotest
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    seokpan.io/release-state: input-required-no-runtime-validation

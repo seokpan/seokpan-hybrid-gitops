@@ -14,4 +14,4 @@ release-manifest:
 	$(PYTHON) tools/render_release.py $(ENVIRONMENT) --output "$(OUTPUT)" --kustomize "$(KUSTOMIZE)"
 
 test:
-	KUSTOMIZE="$(KUSTOMIZE)" $(PYTHON) -m unittest discover -s tools -p 'test_app_manifests.py' -v
+	KUSTOMIZE="$(KUSTOMIZE)" $(PYTHON) -m unittest discover -s tools -p 'test_*_manifests.py' -v
