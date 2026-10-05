@@ -277,7 +277,7 @@ def recovery_manifest_blockers(rendered, namespace, registry):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("environment", choices=("lab", "recovery"))
+    parser.add_argument("environment", choices=("lab", "cloud", "recovery"))
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--kustomize", default=os.environ.get("KUSTOMIZE", "kustomize"))
     parser.add_argument("--recovery-namespace", default=os.environ.get("RECOVERY_NAMESPACE"))

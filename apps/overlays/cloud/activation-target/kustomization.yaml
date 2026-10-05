@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cloud-input-required
+# A STATIC TARGET PREVIEW, not a Cloud Application targetRevision/path.
+# Input-required endpoints/images and draft annotations are still inherited.
+resources:
+  - ../runtime
+  - pdb.yaml
+replicas:
+  - name: backend
+    count: 3
+  - name: frontend
+    count: 3
+patches:
+  - path: topology.yaml

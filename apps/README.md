@@ -1,4 +1,4 @@
-# App base와 lab / Recovery 입력 대기 구현
+# App base와 환경별 입력 대기 구현
 
 목적은 D의 [h-gitops Issue #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5)에 실제 Kustomize 선언을 인계하고, C의 Offline Recovery에서 소비할 App·새 Redis Source와 Secret/CA 경계를 마련하는 것이다. RTO/RPO 숫자를 정하거나 실제 복구 결과를 대신하는 자료가 아니다.
 
@@ -101,7 +101,7 @@ Recovery는 별도로 공급한 승인 Namespace와 Local Harbor Host(`RECOVERY_
 4. D #5의 수동 Sync·Health와 #6의 수정 Image/양성·음성 연결·업무 검증을 받는다. Namespace/Prune/Finalizer/삭제 정책은 이번 변경에서 수정하지 않았다.
 5. Recovery 접속·새 Redis 상태 처리·완료 기록/신규 게임 업무를 확인한 Render·Image·Config/CA·Secret 논리 참조·도구를 장애 전에 로컬에 보존한다. 전체 Bundle 작성·C의 수락과 D의 기존 실제 Run은 아직 남았다. 탐지부터 업무 재개, Backup Data 시각 근거와 최신성을 측정한다. [h-docs PR #30](https://github.com/seokpan/seokpan-hybrid-docs/pull/30)의 main 반영으로 현재 설계 요구사항은 **RTO 10분·영속 DB RPO 30분·운영 중 Portable Backup 15분**이다. 선택 근거·기능/접속 범위·미달 처리와 실행 Gate는 [03 §3-I.14.5](https://github.com/seokpan/seokpan-hybrid-docs/blob/ab116463fd1f1a75d54e734c3c1c99cd098f639d/design/03_DETAILED_DESIGN.md#recovery-design-decision-20261005)를 따른다. 예약 주기만으로 RPO를 보장하지 않으며 실제 성공 Data 간격·로컬 완성 지연·시점 불확실성 및 실제 사용 사본의 나이를 검증한다. 이전 30분·90분·1시간은 승인 이력이며 기존 Run을 소급 변경하지 않는다. 로컬 합성 부분 Run PASS를 실제 전체 RTO/RPO·최종 T18 달성으로 확대하지 않는다.
 
-Cloud Overlay의 ECR·FE/BE 3 Replica·PDB minAvailable 2·AZ soft spread/자원 검증은 후속 범위다. Cloud 없는 이번 Build 결과를 ROSA 배포 완료로 표시하지 않는다.
+Cloud 선언 후보는 [cloud](overlays/cloud/README.md)에 별도 후속 변경으로 연결한다. 기본 Render는 기동 보류 0이며 승인된 FE/BE 각 3 Replica·PDB minAvailable 2·AZ soft spread는 분리된 목표 Preview다. 실제 Source 상태 공유·1 Replica 실측·Pool/자원·입력/권한·Runtime 검증 뒤 리뷰한 변경으로 활성화한다. Cloud Source Build를 ROSA 생성·배포 완료로 표시하지 않는다.
 
 공통 `SEOKPAN_GAME_LIFECYCLE_MODE=legacy`는 lab/Recovery 최초 단일 Replica 후보에서 유지한다. PR #11 Cloud 후보에 이 값을 바꾸는 override가 없으므로 3 Backend Replica 활성화에 그대로 승계하면 안 된다. Cloud Release 도구의 다중 Replica 입력 검사는 검토한 `captured` 설정을 요구하지만, 설정 이름을 바꾼 것만으로 다중 Pod 업무 안전·기존 Runtime 전환이 수락되지는 않는다. [h-app Issue #4](https://github.com/seokpan/seokpan-hybrid-app/issues/4)의 기능/상태·현재 게임·혼합 Image/설정·Worker 전환 조건과 실제 1/3 Pod 시험의 수락을 먼저 연결한다. 현재 후보를 임의로 `captured`로 활성화하거나 실제 Cloud PASS로 표시하지 않는다.
 

@@ -1,0 +1,31 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: frontend
+spec:
+  host: rosa-route-host-input-required.invalid
+  to: {kind: Service, name: frontend}
+  port: {targetPort: http}
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: backend-api
+spec:
+  host: rosa-route-host-input-required.invalid
+  path: /api/v1
+  to: {kind: Service, name: backend}
+  port: {targetPort: http}
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: backend-ws
+spec:
+  host: rosa-route-host-input-required.invalid
+  path: /ws/v1
+  to: {kind: Service, name: backend}
+  port: {targetPort: http}
+  tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
