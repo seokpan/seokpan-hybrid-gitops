@@ -136,6 +136,81 @@ jobs:
           print("Executed source tests:", counts[0])
           PY
 
+      - name: Preserve diagnostic OCP Source renders
+        run: |
+          set -euo pipefail
+          "$GITOPS_TEST_PYTHON" - "${RUNNER_TEMP}/ocp-source-handoff" <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys
+          import yaml
+          root = pathlib.Path.cwd()
+          output = pathlib.Path(sys.argv[1])
+          output.mkdir(exist_ok=False)
+          paths = (
+              "apps/base", "apps/overlays/lab", "clusters/ocp-lab/reuse",
+              "clusters/ocp-lab/bootstrap", "clusters/ocp-lab/root",
+              "clusters/ocp-lab/new-namespace", "platform/ocp-lab/new-namespace",
+              "operations/ocp-lab/migration",
+          )
+          binary = os.environ["KUSTOMIZE"]
+          version = subprocess.run([binary, "version"], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+          if version != "v5.7.1":
+              raise SystemExit("Expected the checksum-verified Kustomize v5.7.1")
+          head = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                                capture_output=True, text=True).stdout.strip()
+          tree = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], check=True,
+                                capture_output=True, text=True).stdout.strip()
+          records = []
+          sums = []
+          for path in paths:
+              rendered = subprocess.run([binary, "build", str(root / path)],
+                                        check=True, capture_output=True).stdout
+              objects = list(yaml.safe_load_all(rendered))
+              if not objects or any(not isinstance(obj, dict) for obj in objects):
+                  raise SystemExit("Invalid rendered YAML: " + path)
+              if any(obj.get("kind") == "Secret" for obj in objects):
+                  raise SystemExit("Do not publish Secret objects in diagnostic renders")
+              for obj in objects:
+                  kind = obj.get("kind")
+                  if kind in {"Deployment", "StatefulSet"} and obj["spec"].get("replicas") != 0:
+                      raise SystemExit("Diagnostic workloads must remain held at zero replicas")
+                  if kind == "Application":
+                      if "automated" in obj["spec"].get("syncPolicy", {}) or obj["metadata"].get("finalizers"):
+                          raise SystemExit("Diagnostic Applications must remain manual/non-cascading")
+                  if kind == "Job":
+                      container, = obj["spec"]["template"]["spec"]["containers"]
+                      if obj["spec"].get("suspend") is not True or container.get("args", [None])[0] != "current" or "--execute" in container["args"]:
+                          raise SystemExit("Diagnostic Migration must remain suspended/current")
+              name = path.replace("/", "_") + ".yaml"
+              digest = hashlib.sha256(rendered).hexdigest()
+              (output / name).write_bytes(rendered)
+              sums.append(digest + "  " + name)
+              records.append({"path": path, "file": name, "sha256": digest,
+                              "bytes": len(rendered), "object_count": len(objects),
+                              "objects": [{"apiVersion": obj["apiVersion"], "kind": obj["kind"],
+                                           "namespace": obj["metadata"].get("namespace"),
+                                           "name": obj["metadata"]["name"]} for obj in objects]})
+          record = {"scope": "DIAGNOSTIC_SOURCE_ONLY_NOT_DEPLOYABLE",
+                    "source_sha": head, "source_tree": tree, "kustomize": version,
+                    "python": sys.version.split()[0], "pyyaml": yaml.__version__,
+                    "runtime": "NOT_RUN", "renders": records}
+          (output / "source-manifest.json").write_text(
+              json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          (output / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8")
+          (output / "README.md").write_text(
+              "# Diagnostic OCP Source renders — NOT DEPLOYABLE\n\n"
+              "Source: " + head + "\n\n"
+              "This artifact preserves eight Kustomize source previews and their hashes/object inventory.\n"
+              "INPUT_REQUIRED/.invalid, zero replicas, manual Applications and suspended Migration remain.\n"
+              "Do not Apply/Sync these previews. No cluster, registry, Secret, DB, AWS or runtime acceptance was performed.\n"
+              "Path alternatives are source comparisons, not a sequence to apply together.\n"
+              "Source submission, recipient acceptance and actual Runtime Run are separate records.\n",
+              encoding="utf-8")
+          print(json.dumps({"source": head, "diagnostic_paths": len(records),
+                            "objects": sum(row["object_count"] for row in records),
+                            "scope": record["scope"]}))
+          PY
+
       - name: Confirm source remained unchanged
         run: |
           set -euo pipefail
@@ -146,3 +221,13 @@ jobs:
             printf 'Kustomize: %s\n' "$("$KUSTOMIZE" version)"
             printf 'Scope: local source/render checks only; no cluster, registry, Cloud, deployment or runtime acceptance.\n'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostic OCP Source handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ocp-source-handoff-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/ocp-source-handoff/
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+          overwrite: false

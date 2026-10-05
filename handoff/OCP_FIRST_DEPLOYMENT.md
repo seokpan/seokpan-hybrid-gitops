@@ -15,8 +15,8 @@
 ## 1. 검토 대상과 변경 경계
 
 - App의 병합 Source는 전체 Commit **`c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3`**이다. [h-app PR #5](https://github.com/seokpan/seokpan-hybrid-app/pull/5)의 Source 병합과 D의 새 Build/Scan/Digest·lab 실행 수락은 구분한다. 개인 작업환경의 미반영 변경은 B가 대조하고 보존한다.
-- [h-gitops PR #9](https://github.com/seokpan/seokpan-hybrid-gitops/pull/9)의 App 경로는 `apps/base`와 `apps/overlays/lab`이다. 이 문서의 최초 대조 기준은 기존 HEAD `39f416f3201fc566a6421055422e3dba89310965`이며, 후속 변경의 **최종 전체 HEAD·Render와 검사 결과를 다시 기록**한다. 이전 HEAD의 검사 성공을 새 HEAD 성공으로 사용하지 않는다.
-- [h-gitops PR #11](https://github.com/seokpan/seokpan-hybrid-gitops/pull/11)은 #9 Branch를 Base로 하는 Cloud 후보다. OCP 최초 인계의 선행은 아니다. #9 병합 뒤 #11의 Base를 main으로 바꾸고 Diff·Source 검사를 다시 확인한다. 그 확인 전 #9 Branch 정리는 보류한다.
+- [h-gitops PR #9](https://github.com/seokpan/seokpan-hybrid-gitops/pull/9)·[PR #11](https://github.com/seokpan/seokpan-hybrid-gitops/pull/11)은 병합됐으며 App/lab/Recovery·Cloud 선언은 현재 `main`에 있다. 이번 인계의 실행 Source는 전체 Commit **`3dc624d4dc9a774a6207708bfd68248101890401`**이며 `apps/base`와 `apps/overlays/lab`를 사용한다. 최종 전체 HEAD·Render·검사를 같은 개정으로 기록하고 이전 Image/실습 성공을 새 조합 성공으로 사용하지 않는다.
+- #11은 `main`으로 전환·Source 검토 후 병합됐고 #9/#11 작업 Branch는 삭제됐다. 삭제 Branch를 실행 참조로 쓰지 않고 검토된 전체 SHA를 사용한다. Cloud 선언 병합은 ROSA 생성·App 활성화·다중 Pod 업무 수락이 아니다. 병합 Source의 이번 OCP 인계 결과와 남은 실제 입력은 [2026-10-05 인계 카드](OCP_SOURCE_HANDOFF_20261005.md)를 따른다.
 - 현재 lab Overlay의 `seokpan-argotest`는 **후보 대상 이름**이다. 실제 사용 승인·존재·관리 Owner·권한의 확인을 대신하지 않는다. 기존 `seokpan-app`, 공유 Operator 영역, 1차 자원은 이번 시험이 임의로 변경·삭제할 범위에 넣지 않는다.
 - App base/lab는 FE/BE Deployment·Service·비민감 ConfigMap·Route를 다룬다. App Overlay에 Namespace·Secret·Migration Job·Application·AppProject 객체를 섞어 상시 관리하지 않는다. GitOps 플랫폼 선언과 App 선언, 별도 Secret 공급·단일 Migration 실행을 구분한다.
 - 최소 lab 제어 후보의 경로·선택 방식은 [clusters/ocp-lab](../clusters/ocp-lab/README.md)에 있다. 기존 승인 경로 대조용 `reuse`, 새 Root의 `bootstrap`/`root`, 승인한 새 Namespace가 필요한 때만 사용하는 `new-namespace`는 서로 다른 선택이다. 별도 `operations/ocp-lab/migration` Job은 suspended 입력 대기 후보이고 Root/App의 상시 Sync 경로에 포함하지 않는다.
