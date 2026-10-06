@@ -23,6 +23,9 @@ spec:
         app.kubernetes.io/name: seokpan-migration
     spec:
       restartPolicy: Never
+      # Same logical private-Harbor reference as lab App; no Secret value is stored.
+      imagePullSecrets:
+      - name: lab-harbor-pull
       automountServiceAccountToken: false
       enableServiceLinks: false
       securityContext:
@@ -30,7 +33,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: migration
-        image: lab-registry-input-required.invalid/backend:INPUT_REQUIRED
+        image: harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6
         imagePullPolicy: IfNotPresent
         workingDir: /app
         command:
