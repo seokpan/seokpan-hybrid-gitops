@@ -16,9 +16,9 @@ C의 `data-contract-v2-20261006.md` **§0–7 전체/§6 B 요청5개**를 받�
 
 Source Alembic head는 인계46e와 현재2003에서 `20260902_0002`로 확인했다. 실제 Image 자산/DB `current`를 실행한 결과는 아니다. §2.9 논리 참조6개는 확인했고 공개 CA의 Source ConfigMap과 계약 CA Secret 명칭/Kind를 C/B가 맞춘다. Endpoint/CNAME·세션 시간대 미지정은 수락, Runtime SQL Host VPC/20는 Worker 송신 주소/SG/SQL 매칭의 실제 확인을 조건으로 수락한다. Migration은 suspended `current`/300초 유지, D의 lab Schema 판단과 같은 Image·목적 자격을 받은 뒤 단일 실행한다. lab DB는 재시작·삭제하지 않는다.
 
-Backend 연결 예산은 아직 미수락이다. Cloud 후보3·surge1, Runtime Engine2·기본 Pool5+10·Process1 가정에서 정상2=60/교체3=90, Cloud 정상3=90/교체4=120의 후보 상한이다. overflow5로 줄여도 교체4×20+예약10=90이며, surge0/unavailable0 조합도 허용되지 않는다. C 실제 max_connections·예약과 B의 정상/교체/종료 연결 수·Pool·HA를 맞춘 뒤 활성화한다. 현재 Source replicas0은 유지하며 Source 후보를 실제 Pod 상태로 쓰지 않는다. [최초 배포 안내의 B 수락 표](OCP_FIRST_DEPLOYMENT.md#추가-data-인계--전체-v2-파일-수신과-b-수락-범위), 원 응답 Infra#19/App#1, 시험 GitOps#6, 선언#10을 따른다.
+**Backend 연결 예산은 아직 미수락이다.** C의 실제 `max_connections`·예약 연결과 B의 정상·교체·종료 동시 연결·Pool·HA를 맞춘 뒤 활성화한다. 현재 Source의 `replicas: 0`은 유지하며 Source 후보를 실제 Pod 상태로 쓰지 않는다. 산술과 적용 조건은 [최초 배포 안내의 B 수락 표와 연결 예산](OCP_FIRST_DEPLOYMENT.md#추가-data-인계--전체-v2-파일-수신과-b-수락-범위)에 둔다. 원 응답은 Infra #19/App #1, 시험은 GitOps #6, 선언은 #10에 기록한다.
 
-**Redis 지원 범위 추가 확인:** [AWS 공식 Engine 설명](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/engine-versions.html)은 ElastiCache Redis OSS7.1을 OSS7.0 호환으로 설명한다. 반면 정확한 [redis-py v8.1.0 지원표](https://github.com/redis/redis-py/blob/v8.1.0/README.md)는 6.0 이상 Client의 지원 범위를 Redis7.2 이상으로 명시한다. 따라서 C의7.1 선택을 접수했지만 B의 App 호환 수락은 지원 범위/사용 전략 합의와 실제 대상 시험 후다. 실제 동작 불가능을 단정하거나 Driver/Engine/Protocol을 임의 변경하지 않는다. 기존 Redis7.2.4 시험과 현재 전체 Lua/명령·TLS/AUTH·RESP 동작을 구분한다. 이 차이는 Cloud App 조합 수락의 조건이며 제한 제어 등록/ROSA 첫 Plan을 막는 새 일괄 조건이 아니다.
+**Redis 7.1의 App 호환 수락은 대기 중이다.** 서버 선택은 접수했으며 지원 범위·사용 전략 합의와 실제 대상 시험 후 수락한다. 지원표 대조와 `protocol` 기록 조건은 [최초 배포 안내의 Redis 확인](OCP_FIRST_DEPLOYMENT.md#추가-data-인계--전체-v2-파일-수신과-b-수락-범위)을 따른다. 기존 Redis 7.2.4 시험을 승계하지 않으며 제한 제어 등록·ROSA 첫 Plan은 해당 직접 조건으로 병행한다.
 
 ### D lab 입력 추가 수신
 

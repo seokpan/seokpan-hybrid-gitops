@@ -45,7 +45,7 @@ D는 Context `team4-ocp-lab`, Controller `openshift-gitops`, OCP 4.20.0·GitOps 
 
 **연결 예산은 C의 두 제안을 그대로 적용해도 해결되지 않는다.** Cloud `activation-target/kustomization.yaml`은 Backend3, base `backend.yaml`은 surge1/unavailable0이다. Runtime Engine2·기본 Pool5+10·Process1 가정에서 Pod당 상한 후보30, 정상2=60/교체3=90, Cloud 정상3=90/교체4=120이다. C가 제안한 overflow5로 줄여도 Cloud 교체4×20+예약10=90으로 RDS85미만 조건을 보장하지 못한다. `maxSurge:0`만 바꾸면 기존 unavailable0과 모두0이므로 허용 조합이 아니다. 종료 중 연결은 별도이며 이 계산은 실측 사용량이 아니다. 실제 한도와 승인3개 분산 목표를 함께 검토해 Pool/교체 정책을 결정한다. 현재 Source의 replicas0 보류는 유지하고, 이 문제는 App 활성화의 직접 조건으로 App #1·GitOps #6/#10에 기록한다. 제어 등록과 ROSA 첫 Plan은 해당 권한·Owner·기반 출력 조건으로 병행한다.
 
-**Redis 지원 범위 추가 확인:** [AWS 공식 Engine 설명](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/engine-versions.html)은 ElastiCache Redis OSS7.1을 OSS7.0 호환으로 설명한다. 반면 정확한 [redis-py v8.1.0 지원표](https://github.com/redis/redis-py/blob/v8.1.0/README.md)는 6.0 이상 Client의 지원 범위를 Redis7.2 이상으로 명시한다. 따라서 C의7.1 선택을 접수했지만 B의 App 호환 수락은 지원 범위/사용 전략 합의와 실제 대상 시험 후다. 실제 동작 불가능을 단정하거나 Driver/Engine/Protocol을 임의 변경하지 않는다. 기존 Redis7.2.4 시험과 현재 전체 Lua/명령·TLS/AUTH·RESP 동작을 구분한다. 이 차이는 Cloud App 조합 수락의 조건이며 제한 제어 등록/ROSA 첫 Plan을 막는 새 일괄 조건이 아니다.
+**Redis 지원 범위 추가 확인:** [AWS 공식 Engine 설명](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/engine-versions.html)은 ElastiCache Redis OSS 7.1을 OSS 7.0 호환으로 설명한다. 반면 정확한 [redis-py v8.1.0 지원표](https://github.com/redis/redis-py/blob/v8.1.0/README.md)는 6.0 이상 Client의 지원 범위를 Redis 7.2 이상으로 명시한다. 따라서 C의 7.1 선택을 접수했지만 B의 App 호환 수락은 지원 범위/사용 전략 합의와 실제 대상 시험 후다. 실제 동작 불가능을 단정하거나 Driver/Engine/Protocol을 임의 변경하지 않는다. 기존 Redis 7.2.4 시험과 현재 전체 Lua/명령·TLS/AUTH·RESP 동작을 구분한다. 시험 기록에는 실제 사용한 `protocol`(RESP2/RESP3)과 설정 출처(명시 설정 또는 Client 기본값)를 남긴다. 현재 App Source는 `protocol`을 명시하지 않는다. 이 차이는 Cloud App 조합 수락의 조건이며 제한 제어 등록/ROSA 첫 Plan을 막는 새 일괄 조건이 아니다.
 
 ### D 추가 공급 수신 — DB와 lab Redis, 음성 Case5
 
@@ -53,7 +53,7 @@ D는 Context `team4-ocp-lab`, Controller `openshift-gitops`, OCP 4.20.0·GitOps 
 
 새 TLS+AUTH lab Redis는 아직 없다. D가 확인한 `seokpan-app/redis`는 평문·AUTH 없음이며 PVC5Gi를 쓰므로 기존 demo2를 변경하지 않는다. Argo 내부 Redis도 재사용하지 않는다. **D는 lab Redis의 실제 구성·공급·실행 일정, B는 선언·임의 UID/쓰기 경로·TLS/AUTH Probe 검토, C는 CA/인증/Data 계약 검토**를 맡는다. 기존 승인 Namespace `seokpan-argotest` 사용·정확 Service DNS/SAN·lab 전용 CA 발급자·같은 Image/Registry 접근·AUTH 공급·noeviction·Probe는 공유 Owner/사용창 수락과 함께 #14/#6에 인계한다. Source App base에 Redis를 임의로 섞거나 새 Namespace/공유 DB/PVC를 만들지 않는다.
 
-D가 물은 음성 Case5는 실제 `db_admin` Secret을 Backend Deployment에 넣지 않고 **승인 Image의 순수 계정 검사 함수에 가짜 URL을 넣는 방식**으로 수행한다. 기존 cp-03의 승인 Image 캐시에서 네트워크를 끄고 실행하므로 lab Registry 경로·실제 DB·CA·Migration 자격을 기다리지 않는다. 아래는 D에게 제공할 절차이며 B가 실행하거나 실제 Image PASS로 판정한 결과는 아니다. Image의 Alembic head도 같은 실행에서 DB 접속 없이 확인한다.
+D가 물은 음성 Case5는 실제 `db_admin` Secret을 Backend Deployment에 넣지 않고 **승인 Image의 순수 계정 검사 함수에 가짜 URL을 넣는 방식**으로 수행한다. 기존 cp-03의 승인 Image 캐시에서 네트워크를 끄고 실행하므로 lab Registry 경로·실제 DB·CA·Migration 자격을 기다리지 않는다. 아래는 D에게 제공할 절차이며 B가 실행하거나 실제 Image PASS로 판정한 결과는 아니다. Image의 Alembic head도 같은 실행에서 DB 접속 없이 확인한다. Podman은 계정과 rootful/rootless 모드에 따라 Image 저장소가 달라지므로 cp-03에서 승인 Image를 Pull한 것과 같은 계정·모드로 실행한다.
 
 ```bash
 backend_image='harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6'
@@ -88,7 +88,7 @@ for account in ('identity_svc', 'game_svc'):
 PY
 ```
 
-승인 Digest·기존 Host·시각·exit code와 정제된 출력만 #6/App #1에 기록한다. 캐시에 없으면 자동 Pull하지 않는다. Case5 PASS는 Runtime 계정 검사 거부의 범위이며 실제 TLS/GRANT/Ready 시험이 아니다. Case1~4와 DB `current`/Schema·실제 업무는 해당 lab 입력 수락 후 새 Run으로 확인한다.
+승인 Digest·기존 Host·실행 계정/모드·시각·exit code와 비밀값을 제거한 출력만 #6/App #1에 기록한다. 실패하면 `FAIL` 메시지 원문을 함께 남기고, `FAIL` 메시지가 없으면 그 사실과 Podman/프로세스 오류를 비밀값 없이 기록한다. 캐시에 없으면 자동 Pull하지 않는다. Case5 PASS는 Runtime 계정 검사 거부의 범위이며 실제 TLS/GRANT/Ready 시험이 아니다. Case1~4와 DB `current`/Schema·실제 업무는 해당 lab 입력 수락 후 새 Run으로 확인한다.
 
 ## 1. 검토 대상과 변경 경계
 
