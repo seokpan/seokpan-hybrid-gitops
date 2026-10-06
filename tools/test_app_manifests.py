@@ -70,6 +70,11 @@ class AppManifestBoundaries(unittest.TestCase):
                             "backend": "harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6",
                             "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9",
                         }
+                        if env == "lab":
+                            approved = {name: image.replace(
+                                "harbor.seokpan.soldesk.store/seokpan-hybrid/",
+                                "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/")
+                                for name, image in approved.items()}
                         self.assertEqual(container["image"], approved[dep["metadata"]["name"]])
                     else:
                         self.assertIn("INPUT_REQUIRED", container["image"])
@@ -181,10 +186,15 @@ class AppManifestBoundaries(unittest.TestCase):
     def test_registry_pull_secret_references_are_explicit_and_environment_specific(self):
         for dep in self.by_kind("base", "Deployment"):
             self.assertNotIn("imagePullSecrets", dep["spec"]["template"]["spec"])
-        for env, secret in (("lab", "lab-harbor-pull"), ("recovery", "recovery-harbor-pull")):
-            for dep in self.workloads(env):
-                self.assertEqual(dep["spec"]["template"]["spec"]["imagePullSecrets"],
-                                 [{"name": secret}])
+        for dep in self.workloads("lab"):
+            spec = dep["spec"]["template"]["spec"]
+            self.assertNotIn("imagePullSecrets", spec)
+            for container in spec["containers"]:
+                self.assertTrue(container["image"].startswith(
+                    "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/"))
+        for dep in self.workloads("recovery"):
+            self.assertEqual(dep["spec"]["template"]["spec"]["imagePullSecrets"],
+                             [{"name": "recovery-harbor-pull"}])
 
     def test_probe_and_service_ports_match_app_contract_without_public_probes(self):
         for env in self.renders:
