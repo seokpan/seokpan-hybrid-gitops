@@ -26,10 +26,14 @@ Redis URL은 `rediss://<host>:<port>/0`이며 인증정보를 넣지 않는다. 
 | `backend-redis-runtime` Secret | `SEOKPAN_REDIS_AUTH_TOKEN` Key | 별도 AUTH 개정과 정확한 대상·새 Recovery Runtime |
 | `backend-database-ca` ConfigMap | `ca.crt`, `/etc/seokpan/database-ca/ca.crt` | 해당 DB DNS/SAN·CA·수명·승인 공급본 |
 | `backend-redis-ca` ConfigMap | `ca.crt`, `/etc/seokpan/redis-ca/ca.crt` | 해당 Redis TLS DNS/SAN·CA·수명·승인 공급본 |
-| `lab-harbor-pull` Secret (논리 이름 제안) | lab FE/BE 및 보류 Migration Job의 private Harbor Pull | D가 `seokpan-argotest`의 보호 공급 개정·Owner·권한·Registry CA/Trust를 수락. 객체/값은 Source에 없고 실제 공급/Pull은 미확인 |
+| `lab-harbor-pull` Secret (논리 이름 제안) | lab FE/BE 및 보류 Migration Job의 private Harbor Pull | 공급 type은 `kubernetes.io/dockerconfigjson`, key는 `.dockerconfigjson`. D가 `seokpan-argotest`의 보호 공급 개정·Owner·pull 전용 권한·Registry CA/Trust를 수락. 객체/값은 Source에 없고 실제 공급/Pull은 미확인 |
 | `recovery-harbor-pull` Secret | Recovery FE/BE/Redis Pull | 장애 전에 로컬에서 사용할 Harbor 자격·CA·Image Mapping |
 | `runtime.env` | 환경별 비민감 ConfigMap | 승인 대상·허용 Origin과 실제 Port/Schema를 일치시킨 개정 |
 | Image Mapping | FE/BE와 Recovery Redis 컨테이너 | 수정 App Commit→Build/Scan→승인 Digest와 C/D의 Redis Engine/TLS·임의 UID 호환성, Registry별 실제 Pull |
+
+`lab-harbor-pull`은 소비 Pod와 같은 `seokpan-argotest` Namespace에서 공급하며, 계정은 필요한 Harbor project의 `Pull Repository` 권한으로 제한한다. Push/Admin/삭제 권한을 추가하지 않는다. 이 project 범위가 특정 Repository/Digest 하나만 허용한다는 뜻은 아니다. 기존 동명 Secret이 있으면 Owner·소비자·type을 확인한다. Secret type은 생성 후 변경할 수 없으므로 type이 다를 때 type patch나 임의 삭제 대신 Owner가 수락한 교체/참조 전환 방법을 정한다. 형식 확인과 실제 인증·승인 Digest Pull 성공은 별도다.
+
+Pull Secret은 Registry 인증 정보이며 DB/Redis CA Mount는 Registry TLS 신뢰 설정을 대신하지 않는다. 현재 lab의 신뢰 설정으로 Harbor TLS가 검증되면 추가 Trust 변경은 필요하지 않다. node/cluster Trust의 추가 변경이 필요한 경우에만 공유 lab Owner와 변경 범위·영향·검증 방법을 합의한다. 이번 Source는 Secret 객체/값이나 Trust 설치를 공급하지 않으며, 실제 공급과 Pull 검증은 해당 환경의 후속 실행이다.
 
 Migration 목적 인증정보는 일반 App Deployment에 넣지 않으며 자동 Job도 포함하지 않는다. Schema/대상/Image/승인 Ref를 확인한 별도 단일 실행이 필요하다. Runtime 계정 분리, Data Restore/Cutover는 C의 작업 경계를 유지한다.
 
