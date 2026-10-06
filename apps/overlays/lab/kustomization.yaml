@@ -7,15 +7,13 @@ resources:
   - routes.yaml
 images:
   - name: seokpan-backend
-    newName: harbor.seokpan.soldesk.store/seokpan-hybrid/backend
+    newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend
     digest: sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6
   - name: seokpan-frontend
-    newName: harbor.seokpan.soldesk.store/seokpan-hybrid/frontend
+    newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/frontend
     digest: sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9
-# Logical private-Harbor reference; D must supply/review the Secret separately.
+# Internal Registry in the same namespace; D reported default-SA Pull success.
 patches:
-  - target: {kind: Deployment}
-    path: registry-pull.yaml
   # 작성자: 정태훈 / 작성 날짜: 2026/10/06
   # Initial lab candidates from GitOps #14; replicas stay held at zero.
   # D must check actual scheduling/pressure during the staged first startup.

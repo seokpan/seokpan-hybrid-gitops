@@ -114,8 +114,8 @@ class OCPControlBoundaries(unittest.TestCase):
                        if r["kind"] == "Deployment" and r["metadata"]["name"] == "backend")
         backend_pod = backend["spec"]["template"]["spec"]
         self.assertEqual(container["image"], backend_pod["containers"][0]["image"])
-        self.assertEqual(pod["imagePullSecrets"], [{"name": "lab-harbor-pull"}])
-        self.assertEqual(pod["imagePullSecrets"], backend_pod["imagePullSecrets"])
+        self.assertNotIn("imagePullSecrets", pod)
+        self.assertNotIn("imagePullSecrets", backend_pod)
         self.assertEqual(container["env"], [{"name": "SEOKPAN_MIGRATION_DATABASE_URL",
             "valueFrom": {"secretKeyRef": {"name": "backend-db-migration",
                                             "key": "SEOKPAN_MIGRATION_DATABASE_URL"}}}])
