@@ -2,6 +2,14 @@
 
 **목적:** 병합된 App와 GitOps 선언을 D의 실제 OCP 배포와 C의 Data 검토에 연결한다. 이 카드는 Source 제출·입력 수신·실제 실행을 따로 표시한다. 상세 절차는 [OCP 최초 배포 안내](OCP_FIRST_DEPLOYMENT.md), B 원본은 [GitOps #10](https://github.com/seokpan/seokpan-hybrid-gitops/issues/10), 개인 상위는 [Docs #21](https://github.com/seokpan/seokpan-hybrid-docs/issues/21)이다.
 
+## 현재 후속 — 2026-10-06 Registry 경로 미확보
+
+[D의 GitOps #14 보고](https://github.com/seokpan/seokpan-hybrid-gitops/issues/14#issuecomment-6011344271)를 수신했다. lab과 Harbor 사이의 망 연결이 없어 bastion 요청의 SYN이 Harbor에 도착하지 않았고, 임시 라우트는 원복했다고 보고했다. **현재 Harbor로 Pod를 기동할 경로는 확보되지 않았다.** Node 직접 접근은 미검사다. Context/Controller·대상 Namespace Active/managed-by 일치·기존 Application 없음은 D의 조회 범위로 구분하며, B의 권한·공유 Owner·사용창·4조 공지/사용 수락은 남았다. Application이 없다고 기존 FE/BE 등 배포 객체도 없다고 판단하지 않는다.
+
+먼저 할 수 있는 것은 **권한·단일 Owner·공유 사용을 수락한 제한 Project/Application 등록과, 필요한 경우 Root의 수동 Sync**다. Root가 Child Application을 등록해도 App 자동 Sync는 없다. 현재 lab 8객체 전체의 0 Replica Sync 또는 진단 ZIP Apply는 허용한 실행 방법이 아니다. Service·Route·ConfigMap도 실제로 바뀌며, 기존 동명 Deployment를 0으로 줄이면 중단될 수 있다. 실제 8객체 목록·Owner·selector·Route Host·Diff를 먼저 확인한다. 현재 Release 검사의 0 Replica·미입력 거부는 유지한다.
+
+망 Owner의 연결 지원 확인과 **이미 있는 공통 Registry 후보 조사**를 병행한다. 후보의 복사 호스트/lab Node 접근·사용 Owner·TLS·인증과 승인 Image의 내용/플랫폼·대상 Index Digest를 확인한다. 대상이 정해지기 전 lab Image·Cloud ECR·Recovery Harbor 선언은 바꾸지 않는다. ROSA 준비도 별도 진행한다. 판단·담당·기존 절차와의 관계는 [최초 배포 안내의 현재 확인](OCP_FIRST_DEPLOYMENT.md#2026-10-06-현재-확인--registry-경로와-먼저-할-수-있는-준비)에 있다. 공급은 #14, B 수신/선언 대조는 #10, 실제 등록/Sync는 #5, 접속/업무는 #6에 기록한다. 아직 Apply/Sync·새 실행 Run·Runtime PASS는 없다.
+
 ## 1. 최초 인계 기준과 이번 Image 개정 상태
 
 | 구분 | 기준·이번 상태 | 다음 담당 |
@@ -9,7 +17,7 @@
 | 최초 인계 Source | **2026-10-05 최초 인계 기준:** App `c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3`; GitOps `3dc624d4dc9a774a6207708bfd68248101890401` / Tree `24a6c69fd22b8065bc537b5c77aef10336c9026b`. 이 병합 기준의 GitOps 49개 Blob·권한을 원격 manifest와 대조, #11 검토 Tree와 동일. 인계 PR artifact의 실제 checkout SHA/Tree는 artifact manifest에서 별도 확인 | B가 Source 묶음을 제출. D/C 수신·보완은 각 원 이슈에 기록 |
 | 최초 인계 Native Source/Render 검사 | **최초 인계 기준** 병합 HEAD의 [Run 37323213534](https://github.com/seokpan/seokpan-hybrid-gitops/actions/runs/37323213534), Job 111807272347: Kustomize v5.7.1·Python 3.12·PyYAML 6.0.2, App18+OCP6+Release6+Cloud9 = **39 PASS**, skip0. 테스트가 실제 Kustomize Build 후 객체·참조·보류 조건 검사 | 실제 Cluster Admission·Image Pull·Data 연결·업무는 D/B/C 별도 |
 | Render 인계 파일·Hash | 기존 [GitOps #12](https://github.com/seokpan/seokpan-hybrid-gitops/pull/12)에서 39개 검사 뒤 **8개 OCP 진단 Render·SHA256·객체 목록·실제 checkout SHA/Tree**의 artifact 보존을 추가했다. **이번 Image 입력 PR은 그 Workflow를 사용하며 Workflow 자체를 변경하지 않는다.** 새 HEAD Native CI·artifact의 실제 결과는 #10/PR에 연결하고 최초 인계 결과와 구분한다 | B가 새 HEAD artifact를 검증·제출, D/C 수신·보완 별도 |
-| 실제 lab 상태 | 기존 #5 기록상 공유 Controller `openshift-gitops`, 대상 `seokpan-argotest`, managed-by 라벨 유지. 이번 작업에서는 OCP API를 조회하지 않았으므로 현재 실행 상태·권한·Owner·사용 승인을 확인했다고 쓰지 않음 | D와 공유 Owner가 적용 직전 재확인 |
+| 실제 lab 상태 | #14의 D 보고에서 공유 Controller `openshift-gitops`, `seokpan-argotest` Active·managed-by 일치, Project default만·Application 없음, Pull Secret 미존재를 수신. D Caller는 system:admin이며 B 권한·Owner·사용 수락은 미확인. 검토자의 독립 OCP API 조회 결과는 아님 | D와 공유 Owner가 권한·Owner·사용 수락과 기존 배포 객체/충돌을 적용 직전 확인 |
 | 새 조합 실제 실행 | 아래 D의 최종 Harbor Image/Scan/Digest 인계를 수신해 Lab/Recovery App과 보류 Migration의 Image 참조를 고정했다. 실제 lab Owner/권한·Secret/CA/Data/Schema·Node 플랫폼 공급 계약은 미수락. Workload Pull은 공급 수락 뒤 해당 활성화/최초 실행에서 검증할 결과이며 **NOT RUN**. OCP Apply/Sync·Registry 조회·Migration/DDL·AWS 호출 **NOT RUN** | 나머지 최소 입력 수락 → 별도 활성화 개정 → 최초 수동 Sync·새 Run |
 
 #9/#11 Branch는 삭제됐으므로 위 SHA와 파일 링크를 사용한다. 2026-10-05 최초 인계 PR은 문서와 검사 결과 보존만 바꿨다. 이후 2026-10-06 Image 입력 개정은 아래 승인 App Digest와 lab의 논리 Pull Secret 참조만 반영하며 기동·Migration 실행·플랫폼 입력은 계속 보류한다. artifact는 실제 checkout SHA/Tree를 기록하므로 문서 기준 SHA와 구분하고, 실행할 때는 사용할 전체 SHA와 선언을 다시 대조한다. 개인 clone의 미push/미커밋 변경 확인은 본인 환경에서 해야 한다.
@@ -22,7 +30,7 @@
 - **Manifest**는 어떤 Image·설정·개수로 실행할지 적은 YAML이다. `apps/base` 공통 선언에 `apps/overlays/lab`의 OCP 대상·Route·설정을 합친다.
 - **Render**는 Kustomize가 위 입력을 최종 YAML로 계산하는 작업이다. Render만 하면 클러스터는 바뀌지 않는다.
 - **Application**은 Argo CD에 Repo·SHA·Path·대상을 알려주는 객체다. 현재 Source는 수동 최초 Sync이며 자동 Sync가 없다. 따라서 GitHub 병합만으로 이 OCP 새 조합이 배포됐다고 볼 수 없다.
-- **Sync**를 승인·실행하면 Argo CD가 그 선언을 OCP API에 적용하고, OCP가 Image를 내려받아 Pod를 만든다. `Ready`와 업무 시험으로 실제 결과를 판정한다.
+- **Sync**를 승인·실행하면 Argo CD가 해당 선언을 OCP API에 적용한다. Root Sync는 Child Application 등록이고 App Sync와 별개다. App가 Pod를 만들도록 승인한 뒤 실제 Node가 Image를 내려받아 기동한다. 0 Replica의 Sync는 Pull·Ready·업무 성공을 확인하지 않는다.
 
 ROSA는 AWS에서 제공하는 별도 OpenShift 클러스터다. 현재 `cloud` 선언과 Infra의 ROSA 코드는 준비됐지만 이 코드 병합만으로 ROSA가 생성되거나 기존 OCP가 ROSA로 바뀌지 않는다.
 
@@ -47,6 +55,7 @@ ROSA는 AWS에서 제공하는 별도 OpenShift 클러스터다. 현재 `cloud` 
 |---|---|---|---|
 | App SHA → Harbor FE/BE 최종 Digest/Platform·Build/Scan 보고 수신. private Pull Secret/CA 공급 계약은 미수락; Workload Pull 시험은 이후 실제 실행 | D: [App #2](https://github.com/seokpan/seokpan-hybrid-app/issues/2) / App #10 인계. B: 위 Source 반영·lab-harbor-pull 논리 참조 제안 | 공급 계약 수락 전 활성화 대기. 수락 후 최초 Sync에서 Image Pull·SCC/업무 Case 확인. Image 값 작성 대기는 해소 | D Pull/Trust 공급 검토·나머지 lab/Data 입력 대조. ECR은 별도 |
 | Context·Caller/RBAC·Controller/Project/Application·Namespace Owner·실제 managed-by·Repo 인증·4조 공지/공유 사용 수락 | D/공유 Owner: [GitOps #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5) | 실제 Application 등록·변경·Sync | 기존 승인 `reuse` 경로와 제한 Project 비교. 새 Namespace 자동 생성 금지 |
+| Node에서 사용할 Registry로의 망 경로·DNS·CA·Pull 인증. 현재 Harbor 접근 미확보, Node 직접 검사는 미실행 | D/망·공유 Owner: [GitOps #14](https://github.com/seokpan/seokpan-hybrid-gitops/issues/14), B 수신/대조: #10 | Image를 사용하는 Pod 기동. 제한된 제어 등록은 권한·Owner·사용 수락 후 별도 준비 | 망 연결 지원 및 이미 있는 공통 Registry 후보·복사 호스트/Node 접근·Owner·동일 Image 내용/플랫폼·대상 Digest 확인 |
 | lab DB DNS/Port/DB·CA/SAN·TLS·Runtime 계정·Schema, Redis rediss/TLS+별도 AUTH·CA, 외부 Secret/CA 공급 개정 | C 계약 + D lab 공급 + B 소비: [App #1](https://github.com/seokpan/seokpan-hybrid-app/issues/1), [GitOps #6](https://github.com/seokpan/seokpan-hybrid-gitops/issues/6) | 실제 연결·Ready·대표 업무 | 논리 Secret 참조·양성/음성 Case 대조 |
 | Migration 필요 여부, 실제 Image 내 `seokpan-migration-gate`/자산, 같은 Backend Digest·ConfigMap/DB CA·별도 목적 자격·C 수락 action/deadline·유일한 Run | C 판단/수락, B 계약, 지정 실행자: App #1/GitOps #6 | 필요한 Schema 준비·해당 최초 App Sync | `current`와 실제 DDL 구분, suspended Job/단일 실행 준비 |
 | 실제 Route Host·Origin·외부 DNS/TLS·승인 최초 Replica1·자원/종료 개정 | B 선언 + D lab 경로/실측: GitOps #10/#5/#6 | FE/API/WSS·외부 업무 | Route/Port/Probe·최초 활성화/삭제 보호 대조 |
