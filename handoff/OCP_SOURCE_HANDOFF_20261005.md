@@ -10,6 +10,12 @@
 
 망 Owner의 연결 지원 확인과 **이미 있는 공통 Registry 후보 조사**를 병행한다. 후보의 복사 호스트/lab Node 접근·사용 Owner·TLS·인증과 승인 Image의 내용/플랫폼·대상 Index Digest를 확인한다. 대상이 정해지기 전 lab Image·Cloud ECR·Recovery Harbor 선언은 바꾸지 않는다. ROSA 준비도 별도 진행한다. 판단·담당·기존 절차와의 관계는 [최초 배포 안내의 현재 확인](OCP_FIRST_DEPLOYMENT.md#2026-10-06-현재-확인--registry-경로와-먼저-할-수-있는-준비)에 있다. 공급은 #14, B 수신/선언 대조는 #10, 실제 등록/Sync는 #5, 접속/업무는 #6에 기록한다. 아직 Apply/Sync·새 실행 Run·Runtime PASS는 없다.
 
+### 추가 Data 수신 상태
+
+사용자가 전달한 C의 요약에서 AWS native Endpoint·TLS·Redis 별도 Token·RDS 서울 CA Bundle·Schema 상태별 확인/단일 실행·300초 제한을 **계약 조건으로 부분 수락**한다. 실제 Endpoint/CA/비밀값은 아직 공급 수락하지 않았다. 원 [Infra #19 v2](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6011904645)에 현재 §0만 있어 비밀값/CA 6종 이름·환경변수·공급 담당 표와 §6 전체 항목은 보완 후 대조한다. Migration은 suspended `current`/300초 보류를 유지하며 실제 대상/Revision/action 확인 뒤 단일 실행한다.
+
+C가 전달한 Backend 동시 2개 조건은 **정상 상태와 교체 중 수를 나누어 다시 맞춘다**. Cloud 후보3·base surge1과 Runtime Engine2개의 기본 Pool(5+10)은 Process1 가정에서 Pod당 최대30, 정상2=60/교체3=90, Cloud 정상3=90/교체4=120의 후보 상한을 만든다. 이 상한은 C가 전달한 RDS 85 미만 조건과 충돌한다. 실제 RDS 제한·예약·종료 중 연결과 B의 Pool/교체 정책 확인이 App 활성화의 직접 조건이다. 3→2만으로 교체 중 조건을 해결했다고 쓰지 않으며 현재 replicas0은 유지한다. 상세 근거는 [최초 배포 안내의 추가 Data 인계](OCP_FIRST_DEPLOYMENT.md#추가-data-인계--계약-조건-부분-수락-실제-활성화는-대기), B 응답/실행 대기는 #10/#6에 기록한다.
+
 ## 1. 최초 인계 기준과 이번 Image 개정 상태
 
 | 구분 | 기준·이번 상태 | 다음 담당 |

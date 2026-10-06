@@ -29,6 +29,12 @@ D는 Context `team4-ocp-lab`, Controller `openshift-gitops`, OCP 4.20.0·GitOps 
 
 현재 B가 진행할 일은 인계 문서와 #10에 선행 가능한 범위를 정리하고, D/Owner가 공급할 권한·Owner·사용 수락과 기존 객체 목록을 대조하는 것이다. D는 실제 lab/Registry 공급, B는 선언·권한 범위 대조, C는 Data 계약·Schema 판단을 맡는다. 새 Namespace·새 검사 기능은 필요하지 않으며, 기존 Namespace·자동 Sync/Prune 보류·삭제 보호·별도 Migration 조건을 유지한다. 아래의 실제 App 활성화 순서는 경로 수락 후 그대로 적용한다.
 
+### 추가 Data 인계 — 계약 조건 부분 수락, 실제 활성화는 대기
+
+2026-10-06 사용자가 전달한 C의 계약 요약에서 **AWS가 발급한 Endpoint 그대로 사용·TLS 필수·Redis 별도 Token, RDS 서울 리전 CA Bundle, Schema 상태에 따른 AWS `current`/lab 확인 또는 1회 생성, 실행 제한 300초** 조건을 부분 수락한다. 실제 Endpoint·CA 파일/Hash·비밀값과 공급 수락은 별도다. 원 [Infra #19 계약 v2](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6011904645)는 현재 소개와 §0만 보여, 예고한 비밀값/CA 6종의 정확한 이름·환경변수·공급자 표 및 §6 전체 체크리스트는 원본 보완 후 대조한다. `operations/ocp-lab/migration/job.yaml`은 여전히 suspended `current`, 300초이며 실제 대상·Revision·C의 action 수락 후 단일 실행한다. 제한 시간 종료는 DB 변경 원복을 의미하지 않는다.
+
+**Backend ‘동시 2개까지 안전’은 교체 중까지 수락하지 않는다.** 현재 Cloud `activation-target/kustomization.yaml`의 Backend 후보는 3개, base `backend.yaml`은 `maxSurge: 1`이다. App `2003fe9`의 `backend/src/seokpan/persistence/mariadb/connection.py`는 Identity/Game Runtime Engine 2개를 만들고 Pool 크기를 지정하지 않는다. [SQLAlchemy 기본값](https://docs.sqlalchemy.org/en/20/core/pooling.html) 5+10과 서버 Process 1개를 가정하면 Pod당 최대 연결 후보는 30, 정상 2개는 60, 교체 3개는 90이다. Cloud 후보는 정상 90/교체 120이며 종료 중 연결·관리/Backup/Migration 예약은 별도다. 이는 실측 연결 수가 아니며, C가 전달한 RDS `max_connections` 85 미만 조건과 충돌한다. C의 실제 `max_connections`·예약과 B의 Process/Pool·정상/교체/종료 동시 수를 맞춘 뒤 활성화 개정에서 조정한다. 승인된 3개 분산 후보를 임의로 2개로 바꾸지 않으며 현재 Runtime 0 보류는 유지한다. C 계약 조건 검토는 제어 등록을 막지 않지만, 실제 App 활성화의 연결 예산은 직접 조건이다.
+
 ## 1. 검토 대상과 변경 경계
 
 - 최초 App Source 인계 기준은 전체 Commit **`c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3`**이다. [h-app PR #5](https://github.com/seokpan/seokpan-hybrid-app/pull/5)의 Source 병합과 D의 새 Build/Scan/Digest·lab 실행 수락은 구분한다. 이후 제공된 Image의 App SHA `46e21a74dd608b41f2c12a0a57d76bddfcf25949`와 수락 범위는 [인계 카드 §2-A](OCP_SOURCE_HANDOFF_20261005.md#2-a-d의-최종-harbor-image-인계-수신--실행-승인은-별도)를 따른다. 개인 작업환경의 미반영 변경은 B가 대조하고 보존한다.
