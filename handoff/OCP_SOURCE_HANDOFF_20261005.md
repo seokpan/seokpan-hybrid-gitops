@@ -12,11 +12,19 @@
 
 ### 추가 Data 수신 상태 — 전체 v2 파일 수신
 
-C의 `data-contract-v2-20261006.md` **§0–7 전체/§6 B 요청5개**를 받았다(SHA256 `8679c46b80b1fe93b2083aea584a47e65cf4882d0c976a7cd9218159fe8f4616`, 원본 불변). Endpoint 직접 사용·TLS·Redis 별도Token·CA 공급 순서·환경별 자격 분리·Schema 확인/1회 실행·300초 조건을 수락한다. 원 #19 공개 코멘트의 전체 본문 게시 보완은 기록 후속이며 B의 검토 대기가 아니다. 실제 Endpoint/CA/자격 공급·Image/DB Revision·Redis7.1 시험과 연결 예산은 별도다.
+C의 `data-contract-v2-20261006.md` **§0–7 전체/§6 B 요청5개**를 받았다(SHA256 `8679c46b80b1fe93b2083aea584a47e65cf4882d0c976a7cd9218159fe8f4616`, 원본 불변). Endpoint 직접 사용·TLS·Redis 별도Token·CA 공급 순서·환경별 자격 분리·Schema 확인/1회 실행·300초 조건을 수락한다. 원 #19 공개 코멘트에도 전체 계약 게시를 확인했으며 계약 미제공 대기는 해소됐다. 실제 Endpoint/CA/자격 공급·Image/DB Revision·Redis 지원 범위/호환 전략·실제7.1 시험과 연결 예산은 별도다.
 
 Source Alembic head는 인계46e와 현재2003에서 `20260902_0002`로 확인했다. 실제 Image 자산/DB `current`를 실행한 결과는 아니다. §2.9 논리 참조6개는 확인했고 공개 CA의 Source ConfigMap과 계약 CA Secret 명칭/Kind를 C/B가 맞춘다. Endpoint/CNAME·세션 시간대 미지정은 수락, Runtime SQL Host VPC/20는 Worker 송신 주소/SG/SQL 매칭의 실제 확인을 조건으로 수락한다. Migration은 suspended `current`/300초 유지, D의 lab Schema 판단과 같은 Image·목적 자격을 받은 뒤 단일 실행한다. lab DB는 재시작·삭제하지 않는다.
 
 Backend 연결 예산은 아직 미수락이다. Cloud 후보3·surge1, Runtime Engine2·기본 Pool5+10·Process1 가정에서 정상2=60/교체3=90, Cloud 정상3=90/교체4=120의 후보 상한이다. overflow5로 줄여도 교체4×20+예약10=90이며, surge0/unavailable0 조합도 허용되지 않는다. C 실제 max_connections·예약과 B의 정상/교체/종료 연결 수·Pool·HA를 맞춘 뒤 활성화한다. 현재 Source replicas0은 유지하며 Source 후보를 실제 Pod 상태로 쓰지 않는다. [최초 배포 안내의 B 수락 표](OCP_FIRST_DEPLOYMENT.md#추가-data-인계--전체-v2-파일-수신과-b-수락-범위), 원 응답 Infra#19/App#1, 시험 GitOps#6, 선언#10을 따른다.
+
+**Redis 지원 범위 추가 확인:** [AWS 공식 Engine 설명](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/engine-versions.html)은 ElastiCache Redis OSS7.1을 OSS7.0 호환으로 설명한다. 반면 정확한 [redis-py v8.1.0 지원표](https://github.com/redis/redis-py/blob/v8.1.0/README.md)는 6.0 이상 Client의 지원 범위를 Redis7.2 이상으로 명시한다. 따라서 C의7.1 선택을 접수했지만 B의 App 호환 수락은 지원 범위/사용 전략 합의와 실제 대상 시험 후다. 실제 동작 불가능을 단정하거나 Driver/Engine/Protocol을 임의 변경하지 않는다. 기존 Redis7.2.4 시험과 현재 전체 Lua/명령·TLS/AUTH·RESP 동작을 구분한다. 이 차이는 Cloud App 조합 수락의 조건이며 제한 제어 등록/ROSA 첫 Plan을 막는 새 일괄 조건이 아니다.
+
+### D lab 입력 추가 수신
+
+[D의 #19 응답](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6012181426)에서 DB DNS `mariadb.seokpan-app.svc`·인증서 SAN·10/31 만료와 deadline300초 수락을 받았다. 실제 CA bytes/Hash·목적 자격·Schema·노드 연결은 남았다. TLS+AUTH lab Redis는 없고 기존 demo2/PVC·Argo 내부 Redis는 유지한다. D의 새 lab Redis 구성/공급, B 선언/임의 UID/쓰기/TLSAUTH Probe, C CA/인증 계약 검토를 연결하며 Service DNS·발급자·일정은 실제 인계 대기다.
+
+음성 Case5는 실제 Migration Secret을 Backend에 넣지 않고 기존 승인 Image의 순수 검사 함수에 가짜 db_admin URL을 주어 거부를 확인한다. 기존 cp-03 캐시·network none으로 실제 Image Alembic head도 함께 확인할 수 있다. [정확한 제안 명령](OCP_FIRST_DEPLOYMENT.md#d-추가-공급-수신--db와-lab-redis-음성-case5)은 아직 실행하지 않았으며 Image/Case5 실제 결과를 수신한 뒤 수락한다. lab Registry가 막혀도 이 두 확인의 준비는 별도로 진행한다.
 
 ## 1. 최초 인계 기준과 이번 Image 개정 상태
 

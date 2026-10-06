@@ -31,12 +31,12 @@ D는 Context `team4-ocp-lab`, Controller `openshift-gitops`, OCP 4.20.0·GitOps 
 
 ### 추가 Data 인계 — 전체 v2 파일 수신과 B 수락 범위
 
-2026-10-06 C가 제공한 `data-contract-v2-20261006.md`의 **§0–7 전체와 §6 요청 5개를 수신·검토**했다. 파일 SHA256은 `8679c46b80b1fe93b2083aea584a47e65cf4882d0c976a7cd9218159fe8f4616`이며 원본을 변경하지 않았다. AWS native Endpoint·TLS·Redis 별도 Token, RDS 서울 CA Bundle·Redis CA 실측 공급, 환경별 자격 분리, Schema 상태별 확인/단일 실행과 300초 제한 조건을 수락한다. 공개 [Infra #19 v2](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6011904645)에는 소개/§0만 보이지만, 전체 파일을 받은 B의 계약 검토를 막는 조건은 아니다. 공개 원본 게시 보완은 C의 기록 후속으로 분리한다.
+2026-10-06 C가 제공한 `data-contract-v2-20261006.md`의 **§0–7 전체와 §6 요청 5개를 수신·검토**했다. 파일 SHA256은 `8679c46b80b1fe93b2083aea584a47e65cf4882d0c976a7cd9218159fe8f4616`이며 원본을 변경하지 않았다. AWS native Endpoint·TLS·Redis 별도 Token, RDS 서울 CA Bundle·Redis CA 실측 공급, 환경별 자격 분리, Schema 상태별 확인/단일 실행과 300초 제한 조건을 수락한다. [Infra #19 v2 원 댓글](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6011904645)에도 전체 계약이 2026-10-06 17:14 KST 개정으로 게시된 것을 확인했다. 이전 소개/§0만 보였던 기록과 전체 파일/원문 수신 완료를 구분하며 계약 미제공 대기는 해소됐다.
 
 | §6 B 요청 | Source 검토·수락 범위 | 남은 실제 확인 |
 |---|---|---|
 | Image의 Alembic head | 인계 Image Source `46e21a74`와 현재 App `2003fe9`의 Migration은 같은 Blob이며 Source head `20260902_0002` 확인 | 실제 승인 Image 내 자산·명령 및 가져온 DB revision 확인. Source head를 Image/DB 실행 결과로 대신하지 않음 |
-| Redis OSS 7.1 호환 | 서버7.1 선택과 기존 Client/TLS 계약을 접수 | Lua·명령·redis-py8.1.0의 실제7.1 시험은 B 후속. 기존7.2.4 결과를 승계하지 않으며 ROSA 첫 Plan 조건으로 올리지 않음 |
+| Redis OSS 7.1 호환 | 서버7.1 선택과 기존 Client/TLS 계약을 접수 | AWS ElastiCache7.1은 OSS7.0 호환이고 redis-py8.1.0 공식 지원표는7.2 이상을 명시해 B/C 지원 범위·호환 전략 합의와 실제 대상 시험은 미수락. 동작 불가능을 단정하지 않으며 기존7.2.4 PASS를 승계하거나 첫 ROSA Plan 조건으로 올리지 않음 |
 | Endpoint·세션 시간대 | AWS Endpoint 직접 사용/CNAME 미사용과 App 세션 시간대 미지정 조건 수락 | C/A의 RDS Asia/Seoul 설정 및 실제 세션·기존 DATETIME 의미 대조. 게임 UTC/회원 DB시간을 일괄 ±9시간 변환하지 않음 |
 | Pod·Process·연결 예산 | Source Process1 예상과 아래 Pool/교체 차이 확인 | C 실제 max_connections·10개 예약과 B의 HA/Pool/정상·교체·종료 동시 연결 예산 합의 뒤 활성화 |
 | Runtime SQL Host | VPC `192.168.64.0/255.255.240.0` + Worker→Data SG 제한을 조건부 수락 | 실제 ROSA Worker의 송신 주소와 SQL Host 매칭 검증. Data VM /32는 별도 공급·Backup/Migration 조건 |
@@ -44,6 +44,51 @@ D는 Context `team4-ocp-lab`, Controller `openshift-gitops`, OCP 4.20.0·GitOps 
 §2.9 공급표는 `backend-config`, Runtime/Migration/Redis Secret 3개, DB/Redis CA 2개의 **논리 참조 6개**로 수신했다. 현재 Source에서 공개 CA는 `backend-database-ca`/`backend-redis-ca` **ConfigMap**으로 Mount하며 계약 그림의 CA Secret 명칭과 최종 Kind를 C/B가 맞춘다. 논리 이름을 바꾸거나 중복 Secret을 만들지 않는다. 실제 Endpoint·CA 파일/Hash·SOPS 자격 및 대상 Namespace 공급 수락은 남았다. `operations/ocp-lab/migration/job.yaml`은 suspended `current`/300초 유지, C가 수락한 action/deadline에 실제 lab Schema와 같은 Backend Digest를 연결한 뒤 단일 실행한다. 시간 초과는 DB 변경을 원복하지 않는다. 기존 lab DB는 PVC가 없으므로 재시작·삭제하지 않는다.
 
 **연결 예산은 C의 두 제안을 그대로 적용해도 해결되지 않는다.** Cloud `activation-target/kustomization.yaml`은 Backend3, base `backend.yaml`은 surge1/unavailable0이다. Runtime Engine2·기본 Pool5+10·Process1 가정에서 Pod당 상한 후보30, 정상2=60/교체3=90, Cloud 정상3=90/교체4=120이다. C가 제안한 overflow5로 줄여도 Cloud 교체4×20+예약10=90으로 RDS85미만 조건을 보장하지 못한다. `maxSurge:0`만 바꾸면 기존 unavailable0과 모두0이므로 허용 조합이 아니다. 종료 중 연결은 별도이며 이 계산은 실측 사용량이 아니다. 실제 한도와 승인3개 분산 목표를 함께 검토해 Pool/교체 정책을 결정한다. 현재 Source의 replicas0 보류는 유지하고, 이 문제는 App 활성화의 직접 조건으로 App #1·GitOps #6/#10에 기록한다. 제어 등록과 ROSA 첫 Plan은 해당 권한·Owner·기반 출력 조건으로 병행한다.
+
+**Redis 지원 범위 추가 확인:** [AWS 공식 Engine 설명](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/engine-versions.html)은 ElastiCache Redis OSS7.1을 OSS7.0 호환으로 설명한다. 반면 정확한 [redis-py v8.1.0 지원표](https://github.com/redis/redis-py/blob/v8.1.0/README.md)는 6.0 이상 Client의 지원 범위를 Redis7.2 이상으로 명시한다. 따라서 C의7.1 선택을 접수했지만 B의 App 호환 수락은 지원 범위/사용 전략 합의와 실제 대상 시험 후다. 실제 동작 불가능을 단정하거나 Driver/Engine/Protocol을 임의 변경하지 않는다. 기존 Redis7.2.4 시험과 현재 전체 Lua/명령·TLS/AUTH·RESP 동작을 구분한다. 이 차이는 Cloud App 조합 수락의 조건이며 제한 제어 등록/ROSA 첫 Plan을 막는 새 일괄 조건이 아니다.
+
+### D 추가 공급 수신 — DB와 lab Redis, 음성 Case5
+
+[D의 Infra #19 응답](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6012181426)에서 DB Service DNS `mariadb.seokpan-app.svc`·같은 이름의 DB 서버 인증서 SAN·발급자 `seokpan-lab-ca`·서버 인증서 만료 2026-10-31(10/26 이후)·Migration 300초 수락을 수신했다. CA 파일/Hash·Runtime/Migration 자격·실제 Schema와 Node→DB 연결 결과는 남았다. 기존 lab DB는 재시작·삭제하지 않는다.
+
+새 TLS+AUTH lab Redis는 아직 없다. D가 확인한 `seokpan-app/redis`는 평문·AUTH 없음이며 PVC5Gi를 쓰므로 기존 demo2를 변경하지 않는다. Argo 내부 Redis도 재사용하지 않는다. **D는 lab Redis의 실제 구성·공급·실행 일정, B는 선언·임의 UID/쓰기 경로·TLS/AUTH Probe 검토, C는 CA/인증/Data 계약 검토**를 맡는다. 기존 승인 Namespace `seokpan-argotest` 사용·정확 Service DNS/SAN·lab 전용 CA 발급자·같은 Image/Registry 접근·AUTH 공급·noeviction·Probe는 공유 Owner/사용창 수락과 함께 #14/#6에 인계한다. Source App base에 Redis를 임의로 섞거나 새 Namespace/공유 DB/PVC를 만들지 않는다.
+
+D가 물은 음성 Case5는 실제 `db_admin` Secret을 Backend Deployment에 넣지 않고 **승인 Image의 순수 계정 검사 함수에 가짜 URL을 넣는 방식**으로 수행한다. 기존 cp-03의 승인 Image 캐시에서 네트워크를 끄고 실행하므로 lab Registry 경로·실제 DB·CA·Migration 자격을 기다리지 않는다. 아래는 D에게 제공할 절차이며 B가 실행하거나 실제 Image PASS로 판정한 결과는 아니다. Image의 Alembic head도 같은 실행에서 DB 접속 없이 확인한다.
+
+```bash
+backend_image='harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6'
+podman run --rm -i --pull=never --network=none --read-only \
+  --cap-drop=ALL --security-opt=no-new-privileges \
+  --env PYTHONDONTWRITEBYTECODE=1 --env PYTHONPATH=/app/src \
+  --entrypoint /app/.venv/bin/python "$backend_image" - <<'PY'
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from seokpan.connection_contract import DatabaseTarget
+from seokpan.persistence.mariadb.connection import (
+    DatabaseConfigurationError,
+    validated_database_url,
+)
+
+heads = ScriptDirectory.from_config(Config('/app/alembic.ini')).get_heads()
+if heads != ['20260902_0002']:
+    raise SystemExit('FAIL: unexpected Alembic head')
+print('PASS: image Alembic head=20260902_0002 (offline)')
+
+target = DatabaseTarget.from_fields('negative-test.invalid', 3306, 'stone_game')
+fake_url = 'mysql+asyncmy://db_admin:NOT_A_SECRET@negative-test.invalid:3306/stone_game'
+for account in ('identity_svc', 'game_svc'):
+    try:
+        validated_database_url(fake_url, account, target)
+    except DatabaseConfigurationError as error:
+        if str(error) != f'database URL must use the {account} account':
+            raise SystemExit('FAIL: wrong validation refusal') from None
+        print(f'PASS: {account} runtime rejects db_admin URL before DB connection')
+    else:
+        raise SystemExit('FAIL: runtime accepted db_admin URL')
+PY
+```
+
+승인 Digest·기존 Host·시각·exit code와 정제된 출력만 #6/App #1에 기록한다. 캐시에 없으면 자동 Pull하지 않는다. Case5 PASS는 Runtime 계정 검사 거부의 범위이며 실제 TLS/GRANT/Ready 시험이 아니다. Case1~4와 DB `current`/Schema·실제 업무는 해당 lab 입력 수락 후 새 Run으로 확인한다.
 
 ## 1. 검토 대상과 변경 경계
 
