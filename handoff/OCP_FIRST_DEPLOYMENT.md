@@ -29,11 +29,21 @@ D는 Context `team4-ocp-lab`, Controller `openshift-gitops`, OCP 4.20.0·GitOps 
 
 현재 B가 진행할 일은 인계 문서와 #10에 선행 가능한 범위를 정리하고, D/Owner가 공급할 권한·Owner·사용 수락과 기존 객체 목록을 대조하는 것이다. D는 실제 lab/Registry 공급, B는 선언·권한 범위 대조, C는 Data 계약·Schema 판단을 맡는다. 새 Namespace·새 검사 기능은 필요하지 않으며, 기존 Namespace·자동 Sync/Prune 보류·삭제 보호·별도 Migration 조건을 유지한다. 아래의 실제 App 활성화 순서는 경로 수락 후 그대로 적용한다.
 
-### 추가 Data 인계 — 계약 조건 부분 수락, 실제 활성화는 대기
+### 추가 Data 인계 — 전체 v2 파일 수신과 B 수락 범위
 
-2026-10-06 사용자가 전달한 C의 계약 요약에서 **AWS가 발급한 Endpoint 그대로 사용·TLS 필수·Redis 별도 Token, RDS 서울 리전 CA Bundle, Schema 상태에 따른 AWS `current`/lab 확인 또는 1회 생성, 실행 제한 300초** 조건을 부분 수락한다. 실제 Endpoint·CA 파일/Hash·비밀값과 공급 수락은 별도다. 원 [Infra #19 계약 v2](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6011904645)는 현재 소개와 §0만 보여, 예고한 비밀값/CA 6종의 정확한 이름·환경변수·공급자 표 및 §6 전체 체크리스트는 원본 보완 후 대조한다. `operations/ocp-lab/migration/job.yaml`은 여전히 suspended `current`, 300초이며 실제 대상·Revision·C의 action 수락 후 단일 실행한다. 제한 시간 종료는 DB 변경 원복을 의미하지 않는다.
+2026-10-06 C가 제공한 `data-contract-v2-20261006.md`의 **§0–7 전체와 §6 요청 5개를 수신·검토**했다. 파일 SHA256은 `8679c46b80b1fe93b2083aea584a47e65cf4882d0c976a7cd9218159fe8f4616`이며 원본을 변경하지 않았다. AWS native Endpoint·TLS·Redis 별도 Token, RDS 서울 CA Bundle·Redis CA 실측 공급, 환경별 자격 분리, Schema 상태별 확인/단일 실행과 300초 제한 조건을 수락한다. 공개 [Infra #19 v2](https://github.com/seokpan/seokpan-hybrid-infra/issues/19#issuecomment-6011904645)에는 소개/§0만 보이지만, 전체 파일을 받은 B의 계약 검토를 막는 조건은 아니다. 공개 원본 게시 보완은 C의 기록 후속으로 분리한다.
 
-**Backend ‘동시 2개까지 안전’은 교체 중까지 수락하지 않는다.** 현재 Cloud `activation-target/kustomization.yaml`의 Backend 후보는 3개, base `backend.yaml`은 `maxSurge: 1`이다. App `2003fe9`의 `backend/src/seokpan/persistence/mariadb/connection.py`는 Identity/Game Runtime Engine 2개를 만들고 Pool 크기를 지정하지 않는다. [SQLAlchemy 기본값](https://docs.sqlalchemy.org/en/20/core/pooling.html) 5+10과 서버 Process 1개를 가정하면 Pod당 최대 연결 후보는 30, 정상 2개는 60, 교체 3개는 90이다. Cloud 후보는 정상 90/교체 120이며 종료 중 연결·관리/Backup/Migration 예약은 별도다. 이는 실측 연결 수가 아니며, C가 전달한 RDS `max_connections` 85 미만 조건과 충돌한다. C의 실제 `max_connections`·예약과 B의 Process/Pool·정상/교체/종료 동시 수를 맞춘 뒤 활성화 개정에서 조정한다. 승인된 3개 분산 후보를 임의로 2개로 바꾸지 않으며 현재 Source의 replicas0 보류는 유지한다. C 계약 조건 검토는 제어 등록을 막지 않지만, 실제 App 활성화의 연결 예산은 직접 조건이다.
+| §6 B 요청 | Source 검토·수락 범위 | 남은 실제 확인 |
+|---|---|---|
+| Image의 Alembic head | 인계 Image Source `46e21a74`와 현재 App `2003fe9`의 Migration은 같은 Blob이며 Source head `20260902_0002` 확인 | 실제 승인 Image 내 자산·명령 및 가져온 DB revision 확인. Source head를 Image/DB 실행 결과로 대신하지 않음 |
+| Redis OSS 7.1 호환 | 서버7.1 선택과 기존 Client/TLS 계약을 접수 | Lua·명령·redis-py8.1.0의 실제7.1 시험은 B 후속. 기존7.2.4 결과를 승계하지 않으며 ROSA 첫 Plan 조건으로 올리지 않음 |
+| Endpoint·세션 시간대 | AWS Endpoint 직접 사용/CNAME 미사용과 App 세션 시간대 미지정 조건 수락 | C/A의 RDS Asia/Seoul 설정 및 실제 세션·기존 DATETIME 의미 대조. 게임 UTC/회원 DB시간을 일괄 ±9시간 변환하지 않음 |
+| Pod·Process·연결 예산 | Source Process1 예상과 아래 Pool/교체 차이 확인 | C 실제 max_connections·10개 예약과 B의 HA/Pool/정상·교체·종료 동시 연결 예산 합의 뒤 활성화 |
+| Runtime SQL Host | VPC `192.168.64.0/255.255.240.0` + Worker→Data SG 제한을 조건부 수락 | 실제 ROSA Worker의 송신 주소와 SQL Host 매칭 검증. Data VM /32는 별도 공급·Backup/Migration 조건 |
+
+§2.9 공급표는 `backend-config`, Runtime/Migration/Redis Secret 3개, DB/Redis CA 2개의 **논리 참조 6개**로 수신했다. 현재 Source에서 공개 CA는 `backend-database-ca`/`backend-redis-ca` **ConfigMap**으로 Mount하며 계약 그림의 CA Secret 명칭과 최종 Kind를 C/B가 맞춘다. 논리 이름을 바꾸거나 중복 Secret을 만들지 않는다. 실제 Endpoint·CA 파일/Hash·SOPS 자격 및 대상 Namespace 공급 수락은 남았다. `operations/ocp-lab/migration/job.yaml`은 suspended `current`/300초 유지, C가 수락한 action/deadline에 실제 lab Schema와 같은 Backend Digest를 연결한 뒤 단일 실행한다. 시간 초과는 DB 변경을 원복하지 않는다. 기존 lab DB는 PVC가 없으므로 재시작·삭제하지 않는다.
+
+**연결 예산은 C의 두 제안을 그대로 적용해도 해결되지 않는다.** Cloud `activation-target/kustomization.yaml`은 Backend3, base `backend.yaml`은 surge1/unavailable0이다. Runtime Engine2·기본 Pool5+10·Process1 가정에서 Pod당 상한 후보30, 정상2=60/교체3=90, Cloud 정상3=90/교체4=120이다. C가 제안한 overflow5로 줄여도 Cloud 교체4×20+예약10=90으로 RDS85미만 조건을 보장하지 못한다. `maxSurge:0`만 바꾸면 기존 unavailable0과 모두0이므로 허용 조합이 아니다. 종료 중 연결은 별도이며 이 계산은 실측 사용량이 아니다. 실제 한도와 승인3개 분산 목표를 함께 검토해 Pool/교체 정책을 결정한다. 현재 Source의 replicas0 보류는 유지하고, 이 문제는 App 활성화의 직접 조건으로 App #1·GitOps #6/#10에 기록한다. 제어 등록과 ROSA 첫 Plan은 해당 권한·Owner·기반 출력 조건으로 병행한다.
 
 ## 1. 검토 대상과 변경 경계
 
