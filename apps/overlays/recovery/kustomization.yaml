@@ -7,11 +7,11 @@ resources:
   - redis.yaml
 images:
   - name: seokpan-backend
-    newName: recovery-harbor-input-required.invalid/backend
-    newTag: INPUT_REQUIRED
+    newName: harbor.seokpan.soldesk.store/seokpan-hybrid/backend
+    digest: sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6
   - name: seokpan-frontend
-    newName: recovery-harbor-input-required.invalid/frontend
-    newTag: INPUT_REQUIRED
+    newName: harbor.seokpan.soldesk.store/seokpan-hybrid/frontend
+    digest: sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9
   - name: seokpan-recovery-redis
     newName: recovery-harbor-input-required.invalid/redis
     newTag: INPUT_REQUIRED

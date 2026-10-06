@@ -65,7 +65,14 @@ class AppManifestBoundaries(unittest.TestCase):
                 with self.subTest(env=env, app=dep["metadata"]["name"]):
                     self.assertEqual(dep["spec"]["replicas"], 0)
                     container = dep["spec"]["template"]["spec"]["containers"][0]
-                    self.assertIn("INPUT_REQUIRED", container["image"])
+                    if env in {"lab", "recovery"} and dep["kind"] == "Deployment":
+                        approved = {
+                            "backend": "harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6",
+                            "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9",
+                        }
+                        self.assertEqual(container["image"], approved[dep["metadata"]["name"]])
+                    else:
+                        self.assertIn("INPUT_REQUIRED", container["image"])
                     self.assertIn("input-required", dep["metadata"]["annotations"][
                         "seokpan.io/release-state"])
 
@@ -171,13 +178,13 @@ class AppManifestBoundaries(unittest.TestCase):
                     self.assertTrue(mounts[volume["name"]]["readOnly"])
                     self.assertNotIn("subPath", mounts[volume["name"]])
 
-    def test_registry_pull_secret_is_only_recovery_environment_specific(self):
-        for env in ("base", "lab"):
-            for dep in self.by_kind(env, "Deployment"):
-                self.assertNotIn("imagePullSecrets", dep["spec"]["template"]["spec"])
-        for dep in self.workloads("recovery"):
-            self.assertEqual(dep["spec"]["template"]["spec"]["imagePullSecrets"],
-                             [{"name": "recovery-harbor-pull"}])
+    def test_registry_pull_secret_references_are_explicit_and_environment_specific(self):
+        for dep in self.by_kind("base", "Deployment"):
+            self.assertNotIn("imagePullSecrets", dep["spec"]["template"]["spec"])
+        for env, secret in (("lab", "lab-harbor-pull"), ("recovery", "recovery-harbor-pull")):
+            for dep in self.workloads(env):
+                self.assertEqual(dep["spec"]["template"]["spec"]["imagePullSecrets"],
+                                 [{"name": secret}])
 
     def test_probe_and_service_ports_match_app_contract_without_public_probes(self):
         for env in self.renders:
