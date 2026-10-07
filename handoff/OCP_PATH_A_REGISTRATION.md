@@ -51,6 +51,6 @@ python3 tools/check_ocp_lab_registration.py \
 
 현재 보류 Source의 namespace/SHA를 그대로 넣으면 BLOCKED다. 도구는 Source YAML의 정확 Repo/Kind/목적지/SHA·수동/삭제 보호 및 metadata를 비교한다. SHA 존재·리뷰·병합, Stage-1/전체 Workload Gate, 실제 Owner/RBAC/사용창·Secret 공급은 증명하지 않는다. 진단 Render를 Apply하지 않는다.
 
-metadata는 현재 검토된 `name`·`namespace`·`annotations`와 비어 있는 선택적 `labels`만 허용한다. annotation은 `argocd.argoproj.io/sync-options=Prune=false,Delete=false`, `seokpan.io/release-state=input-required-no-runtime-validation`의 두 항목/값에 고정한다. `skip-reconcile`·sync-wave/hook·추적/정책 label 등 추가 metadata는 모두 차단한다. live 객체의 자동 metadata를 정제 없이 넣어 통과시키는 도구가 아니다. 이후 등록 Source에서 metadata를 바꿀 때도 allowlist·시험을 같은 PR에서 명시적으로 리뷰한다. Workload의 Stage-1 release-state와 Controller metadata는 서로 다른 객체/경계다.
+metadata는 현재 검토된 `name`·`namespace`·`annotations`와 비어 있는 선택적 `labels`만 허용한다. annotation은 `argocd.argoproj.io/sync-options=Prune=false,Delete=false`, `seokpan.io/release-state=source-reviewed-runtime-unverified`의 두 항목/값(#24 이후 root 등록 입력 해소 상태)에 고정한다. `skip-reconcile`·sync-wave/hook·추적/정책 label 등 추가 metadata는 모두 차단한다. live 객체의 자동 metadata를 정제 없이 넣어 통과시키는 도구가 아니다. 이후 등록 Source에서 metadata를 바꿀 때도 allowlist·시험을 같은 PR에서 명시적으로 리뷰한다. Workload의 Stage-1 release-state와 Controller metadata는 서로 다른 객체/경계다.
 
 실제 등록값 PR에서 보류 Source 기대 검사를 새 상태와 정합화하되 placeholder 음성 Case는 합성 입력으로 보존한다. 기존 전체 인계는 [첫 배포 인계](OCP_FIRST_DEPLOYMENT.md)·[Controller Source 안내](../clusters/ocp-lab/README.md)를 함께 사용한다. 단계별 Source/Gate·Owner의 최신 기준은 이 문서를 우선하고 옛 후보·실행 이력을 지우지 않는다.

@@ -14,7 +14,7 @@ KINDS = {("apps", "Deployment"), ("apps", "StatefulSet"),
          ("", "Service"), ("", "ConfigMap"), ("route.openshift.io", "Route")}
 ANNOTATIONS = {
     "argocd.argoproj.io/sync-options": "Prune=false,Delete=false",
-    "seokpan.io/release-state": "input-required-no-runtime-validation",
+    "seokpan.io/release-state": "source-reviewed-runtime-unverified",
 }
 METADATA_FIELDS = {"name", "namespace", "annotations", "labels"}
 
@@ -86,7 +86,7 @@ def registration_blockers(rendered, workload_sha):
         if spec["source"] != {"repoURL": REPO, "path": "apps/overlays/lab",
                               "targetRevision": workload_sha}:
             blockers.append("Application must consume the exact prior Workload SHA/path without overrides")
-        if spec["syncPolicy"] != {"syncOptions": ["FailOnSharedResource=true"]}:
+        if spec["syncPolicy"] != {"syncOptions": ["FailOnSharedResource=true", "Prune=false", "Delete=false"]}:
             blockers.append("Application must remain manual without automated sync/extra sync options")
         return blockers
     except (yaml.YAMLError, ValueError, TypeError, KeyError, AttributeError, RecursionError):
