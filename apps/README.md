@@ -45,6 +45,8 @@ lab 활성화는 승인 FE/BE Image를 Kustomize `images.digest`로 고정하고
 
 ### 새 Recovery Redis Source와 C/A/D의 실제 입력
 
+**현재 엔진 선택과 보류 선언의 차이:** 목표는 Valkey 7.2 계열이다. 아래 `redis-server`·TCP Probe·입력 대기 Image/Volume은 기존 held Source의 인터페이스 설명이지 Valkey 기동/호환 수락 결과가 아니다. 실제 활성화 전 B/C/D는 승인 Image의 실행 파일, TLS/AUTH PING Probe, 임의 UID·쓰기/저장 정책을 선택한 뒤 `redis.yaml`·`redis.conf`·`tools/render_release.py`·관련 `test_*manifests.py`를 함께 개정·검증한다. C/A의 미확정 Volume·Digest를 추측해서 채우거나 검사 우회로 활성화하지 않는다.
+
 `redis.yaml`의 논리 이름은 `recovery-redis`이며 격리 Namespace 안의 Headless `ClusterIP` Service만 선언한다. Backend의 `rediss://recovery-redis.<격리 Namespace>.svc:6379/0`과 예상 Host를 함께 바꿔 같은 대상을 검증한다. 체크인 Namespace `recovery-input-required`는 승인된 실제 Namespace가 아니다. 다른 환경·1차 Redis 주소를 연결하거나 `FLUSHALL`로 초기화하는 절차는 넣지 않았다.
 
 `redis.conf`는 평문 Port를 `0`으로 끄고 TLS `6379`, 서버 인증서·Key·CA 파일, TLS 1.2/1.3을 선언한다. App은 Client Certificate를 공급하지 않으므로 `tls-auth-clients no`로 맞추고 별도 AUTH를 사용한다. 이는 무인증 허용이 아니다. C가 공급한 보호 AUTH 설정의 실제 `requirepass`가 비어 있지 않고 Backend의 `backend-redis-runtime` Token과 같은 승인 개정인지 실행 전에 검증해야 한다. 비민감 ConfigMap에 Password/ACL 값은 넣지 않으며 Redis 실행 인자는 설정 파일 경로뿐이다. Source 도구는 실제 Secret 내용을 읽거나 인증 성공을 확인하지 않는다.
