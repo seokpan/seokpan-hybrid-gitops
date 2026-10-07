@@ -75,6 +75,52 @@ class LabValkeyPreflight(unittest.TestCase):
         self.assertFalse(any("Secret" in s or "Deployment" in s or "Route" in s
                              for s in selected))
 
+    def test_transport_directive_overrides_duplicates_and_public_auth_are_rejected(self):
+        def replace_config(change):
+            def mutate(rs):
+                config = self.configmap(rs, "lab-redis-config-")["data"]
+                config["redis.conf"] = change(config["redis.conf"])
+            return mutate
+
+        cases = {
+            "uppercase plaintext port": lambda text: text + "\nPORT 6380\n",
+            "later TLS off": lambda text: text + "\ntls-port 0\n",
+            "mixed-case TLS off": lambda text: text + "\nTlS-PoRt 0\n",
+            "duplicate same TLS port": lambda text: text + "\ntls-port 6379\n",
+            "later client certificate mode": lambda text: text + "\ntls-auth-clients yes\n",
+            "public authentication": lambda text: text + "\nrequirepass SYNTHETIC_NOT_A_REAL_PASSWORD\n",
+            "additional include": lambda text: text + "\ninclude /unreviewed/config.conf\n",
+            "include after transport": lambda text: text.replace(
+                "include /etc/seokpan/redis-runtime/redis-runtime.conf", "")
+                + "\ninclude /etc/seokpan/redis-runtime/redis-runtime.conf\n",
+            "different certificate": lambda text: text.replace(
+                "tls-cert-file /etc/seokpan/redis-server-tls/tls.crt", "tls-cert-file /other/tls.crt"),
+            "missing protected mode": lambda text: text.replace("protected-mode yes", ""),
+            "invalid quoted directive": lambda text: text + '\ntls-protocols "unclosed\n',
+
+            "inline hash text": lambda text: text.replace("port 0", "port 0 # inline text"),
+            "inline hash after include": lambda text: text.replace(
+                "include /etc/seokpan/redis-runtime/redis-runtime.conf",
+                "include /etc/seokpan/redis-runtime/redis-runtime.conf # inline text"),
+            "shell quote concatenation": lambda text: text.replace("protected-mode yes", 'protected-mode "ye"s'),
+            "unquoted backslash escape": lambda text: text.replace("protected-mode yes", "protected-mode y\\es"),
+        }
+        for name, change in cases.items():
+            with self.subTest(boundary=name):
+                self.assertTrue(lab_valkey_blockers(self.mutated(replace_config(change))))
+
+    def test_transport_directive_case_full_line_comments_and_spacing_preserve_reviewed_values(self):
+        def mutate(rs):
+            config = self.configmap(rs, "lab-redis-config-")["data"]
+            lines = []
+            for line in config["redis.conf"].splitlines():
+                if line.strip() and not line.lstrip().startswith("#"):
+                    name, arguments = line.split(None, 1)
+                    line = "  " + name.upper() + "  " + arguments + "  "
+                lines.append(line)
+            config["redis.conf"] = "# transport settings\n" + "\n".join(lines) + "\n"
+        self.assertEqual(lab_valkey_blockers(self.mutated(mutate)), [])
+
     def test_gate_does_not_depend_on_fe_be_db_or_route_inputs(self):
         only_valkey = self.mutated(lambda rs: rs.__setitem__(
             slice(None), [r for r in rs if r["kind"] in ("StatefulSet", "Service", "ConfigMap")
