@@ -58,8 +58,10 @@ class OCPControlBoundaries(unittest.TestCase):
         self.assertEqual(app["spec"]["clusterResourceWhitelist"], [])
         self.assertEqual(app["spec"]["clusterResourceBlacklist"], [{"group": "*", "kind": "*"}])
         allowed = {(x["group"], x["kind"]) for x in app["spec"]["namespaceResourceWhitelist"]}
-        self.assertEqual(allowed, {("apps", "Deployment"), ("", "Service"),
-                                   ("", "ConfigMap"), ("route.openshift.io", "Route")})
+        # StatefulSet is allowed only for the held lab Valkey (lab-redis); no wildcard.
+        self.assertEqual(allowed, {("apps", "Deployment"), ("apps", "StatefulSet"),
+                                   ("", "Service"), ("", "ConfigMap"),
+                                   ("route.openshift.io", "Route")})
         self.assertEqual(app["spec"]["destinations"],
                          [{"server": "https://kubernetes.default.svc", "namespace": "seokpan-argotest"}])
         for project in [x for x in self.resources() if x["kind"] == "AppProject"]:
