@@ -2,7 +2,7 @@ KUSTOMIZE ?= kustomize
 PYTHON ?= python3
 ENVIRONMENT ?= lab
 
-.PHONY: preview release-manifest migration-source-check test
+.PHONY: preview release-manifest preflight-lab-valkey migration-source-check test
 
 # Diagnostic preview only. Checked-in overlays remain input-required drafts.
 preview:
@@ -12,6 +12,10 @@ preview:
 release-manifest:
 	@test -n "$(OUTPUT)" || (echo 'OUTPUT is required' >&2; exit 2)
 	$(PYTHON) tools/render_release.py $(ENVIRONMENT) --output "$(OUTPUT)" --kustomize "$(KUSTOMIZE)"
+
+# Stage-1 lab Valkey Source gate only. Does not replace release-manifest. No Apply/Sync.
+preflight-lab-valkey:
+	$(PYTHON) tools/preflight_lab_valkey.py --kustomize "$(KUSTOMIZE)"
 
 # Compare separate reviewed artifacts only. No Apply/Sync/Secret/DB calls.
 migration-source-check:

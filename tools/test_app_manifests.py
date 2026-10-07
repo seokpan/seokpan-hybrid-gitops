@@ -64,7 +64,10 @@ class AppManifestBoundaries(unittest.TestCase):
         for env in self.renders:
             for dep in self.workloads(env):
                 with self.subTest(env=env, app=dep["metadata"]["name"]):
-                    self.assertEqual(dep["spec"]["replicas"], 0)
+                    # Stage-1 lab activation: only the lab Valkey may run. Every other
+                    # workload in every environment must stay held at zero.
+                    lab_valkey = env == "lab" and dep["kind"] == "StatefulSet"
+                    self.assertEqual(dep["spec"]["replicas"], 1 if lab_valkey else 0)
                     container = dep["spec"]["template"]["spec"]["containers"][0]
                     if env in {"lab", "recovery"} and dep["kind"] == "Deployment":
                         approved = {
@@ -86,8 +89,11 @@ class AppManifestBoundaries(unittest.TestCase):
                             "valkey@sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e")
                     else:
                         self.assertIn("INPUT_REQUIRED", container["image"])
-                    self.assertIn("input-required", dep["metadata"]["annotations"][
-                        "seokpan.io/release-state"])
+                    state = dep["metadata"]["annotations"]["seokpan.io/release-state"]
+                    if lab_valkey:
+                        self.assertEqual(state, "source-reviewed-runtime-unverified")
+                    else:
+                        self.assertIn("input-required", state)
 
     def test_fixed_uid_gid_and_lab_dns_bypass_are_absent(self):
         for env in self.renders:
@@ -235,12 +241,14 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertEqual(recovery["SEOKPAN_REDIS_EXPECTED_HOST"],
                          "recovery-redis.recovery-input-required.svc")
 
-    def test_lab_valkey_source_is_held_tls_auth_unpersisted_and_internal_only(self):
+    def test_lab_valkey_source_is_stage1_active_tls_auth_unpersisted_and_internal_only(self):
         redis, = self.by_kind("lab", "StatefulSet")
         pod = redis["spec"]["template"]["spec"]
         container, = pod["containers"]
         self.assertEqual(redis["metadata"]["name"], "lab-redis")
-        self.assertEqual(redis["spec"]["replicas"], 0)
+        self.assertEqual(redis["spec"]["replicas"], 1)
+        self.assertEqual(redis["metadata"]["annotations"]["seokpan.io/release-state"],
+                         "source-reviewed-runtime-unverified")
         self.assertEqual(container["command"], ["valkey-server"])
         self.assertEqual(container["args"], ["/etc/seokpan/redis/redis.conf"])
         self.assertNotIn("volumeClaimTemplates", redis["spec"])

@@ -7,10 +7,12 @@ kind: StatefulSet
 metadata:
   name: lab-redis
   annotations:
-    seokpan.io/release-state: input-required-no-runtime-validation
+    seokpan.io/release-state: source-reviewed-runtime-unverified
 spec:
-  # Held Source only. B raises replicas after Image/Secret/CA review and manual Sync.
-  replicas: 0
+  # Stage-1 activation: only lab-redis starts; FE/BE stay held at zero until the DB
+  # inputs exist. Source is reviewed; runtime behavior is unverified until D's
+  # post-activation checks (Pod start, arbitrary UID, TLS/AUTH, hostname).
+  replicas: 1
   serviceName: lab-redis
   selector:
     matchLabels:
