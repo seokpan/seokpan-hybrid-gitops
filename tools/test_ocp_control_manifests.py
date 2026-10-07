@@ -45,8 +45,15 @@ class OCPControlBoundaries(unittest.TestCase):
             with self.subTest(path=path, app=app["metadata"]["name"]):
                 # Protections apply to every Application, registered or not.
                 self.assertNotIn("automated", app["spec"]["syncPolicy"])
-                self.assertEqual(app["spec"]["syncPolicy"]["syncOptions"],
-                                 ["FailOnSharedResource=true"])
+                options = app["spec"]["syncPolicy"]["syncOptions"]
+                self.assertIn("FailOnSharedResource=true", options)
+                if path == "clusters/ocp-lab/root":
+                    # Application-level defaults protect every resource this Application manages.
+                    # The metadata sync-options annotation only affects the Application object itself.
+                    self.assertEqual(set(options),
+                                     {"FailOnSharedResource=true", "Prune=false", "Delete=false"})
+                else:
+                    self.assertEqual(options, ["FailOnSharedResource=true"])
                 self.assertFalse(app["metadata"].get("finalizers"))
                 self.assertEqual(app["spec"]["source"]["repoURL"],
                                  "https://github.com/seokpan/seokpan-hybrid-gitops.git")
@@ -65,6 +72,9 @@ class OCPControlBoundaries(unittest.TestCase):
         app = next(x for x in root if x["kind"] == "Application")
         self.assertEqual(project["metadata"]["namespace"], "openshift-gitops")
         self.assertEqual(app["metadata"]["namespace"], "openshift-gitops")
+        for control in (project, app):
+            self.assertEqual(control["metadata"]["annotations"]["seokpan.io/release-state"],
+                             "source-reviewed-runtime-unverified")
         self.assertEqual(app["spec"]["project"], project["metadata"]["name"])
         self.assertEqual(app["spec"]["destination"],
                          {"server": "https://kubernetes.default.svc", "namespace": "seokpan-argotest"})

@@ -38,7 +38,7 @@ make preview ENVIRONMENT=lab
 4. 승인한 동일 Source/Image/설정 조합의 활성화 변경 후 App 최초 수동 Sync. Ready·Client/TLS/AUTH·FE/API/WSS·업무·종료를 실제 새 Run에 기록한다.
 5. 수락 후 별도 변경에서 App AutoSync/SelfHeal을 검토한다. Root/Platform 수동·자동 Prune 보류를 유지한다.
 
-모든 후보 Application은 autoSync·삭제 finalizer·강제 Replace/Force를 넣지 않는다. `FailOnSharedResource=true`는 Argo 추적 충돌을 검출하는 보조이며, 추적되지 않는 기존 객체나 외부 Apply Owner를 모두 판별하는 보장은 아니다. 외부 Owner 대조가 필요하다. 보호 객체의 `Prune=false,Delete=false`는 Argo 동작을 제한하는 선언이며 직접 Namespace 삭제나 다른 Controller/사용자 삭제를 막는 보장은 아니다. 실제 격리된 Case로 별도 확인한다.
+모든 후보 Application은 autoSync·삭제 finalizer·강제 Replace/Force를 넣지 않는다. `FailOnSharedResource=true`는 Argo 추적 충돌을 검출하는 보조이며, 추적되지 않는 기존 객체나 외부 Apply Owner를 모두 판별하는 보장은 아니다. 외부 Owner 대조가 필요하다. `argocd.argoproj.io/sync-options` metadata annotation은 그 객체 자신에만 적용되며 Application이 관리하는 하위 리소스의 보호가 아니다. 등록 대상 `root/` Application은 관리 리소스 전체의 기본값을 `spec.syncPolicy.syncOptions`의 `Prune=false`, `Delete=false`로 둔다(Argo CD 3.4 이상 문서에서 확인한 위치이며 실제 Controller 버전과 동작은 등록 후 확인한다). 보호 객체의 `Prune=false,Delete=false`는 Argo 동작을 제한하는 선언이며 직접 Namespace 삭제나 다른 Controller/사용자 삭제를 막는 보장은 아니다. 실제 격리된 Case로 별도 확인한다.
 
 ## 정리 방법과 범위
 

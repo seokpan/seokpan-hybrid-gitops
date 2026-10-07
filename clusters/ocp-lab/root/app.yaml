@@ -6,7 +6,7 @@ metadata:
   namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
-    seokpan.io/release-state: input-required-no-runtime-validation
+    seokpan.io/release-state: source-reviewed-runtime-unverified
 spec:
   project: seokpan-ocp-lab-app
   source:
@@ -19,3 +19,5 @@ spec:
   syncPolicy:
     syncOptions:
     - FailOnSharedResource=true
+    - Prune=false
+    - Delete=false
