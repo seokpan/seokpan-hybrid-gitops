@@ -1,5 +1,7 @@
 # OCP-lab 첫 Source 인계
 
+**2026-10-07 현재 선택:** [경로 A 등록·검사 안내](../../handoff/OCP_PATH_A_REGISTRATION.md)를 따른다. 기존 `openshift-gitops`에 제한 AppProject/Application 각 1개만 등록하며 새 Root/Controller를 추가하지 않는다. 아래 경로 비교는 보존된 후보이고, 실제 등록값은 Workload 입력 PR 병합 후 그 전체 SHA에 고정하는 별도 PR에서 반영한다. 현재 placeholder Source는 실행하지 않는다.
+
 이 경로는 승인 구조를 연결하는 **기동 보류 Source 리뷰 후보**다. 실제 Controller Namespace/Instance·Owner·권한·Revision·Image/Secret/Schema 입력과 그 대상의 검토 전에는 Apply/Sync하지 않는다. `gitops-controller-input-required`, `GITOPS_REVISION_INPUT_REQUIRED`는 실제 환경을 관측한 값이 아니다. Application 이름은 검토용 후보이며 기존 같은 객체의 이름·Owner를 먼저 대조한다.
 
 [h-gitops Issue #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5)와 [D 리뷰](https://github.com/seokpan/seokpan-hybrid-gitops/pull/9#pullrequestreview-5413591924)는 공유 Controller Namespace `openshift-gitops`, 대상 `seokpan-argotest`의 managed-by 유지, 4조 사전 공지를 기록한다. 실제 적용 직전에 D/공유 Owner가 Instance·Context/권한·기존 라벨 값/Controller 일치·공유 사용 수락을 다시 확인한다. 이 Source 작업은 Runtime 조회·공지 발송·실제값 반영이 아니다. 새 Namespace는 managed-by 필요 값·지원 동작·생성/관리 Owner까지 확인하며 추정 라벨을 넣지 않는다.
