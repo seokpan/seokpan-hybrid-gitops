@@ -4,6 +4,8 @@
 
 이 경로는 승인 구조를 연결하는 **기동 보류 Source 리뷰 후보**다. 실제 Controller Namespace/Instance·Owner·권한·Revision·Image/Secret/Schema 입력과 그 대상의 검토 전에는 Apply/Sync하지 않는다. `gitops-controller-input-required`, `GITOPS_REVISION_INPUT_REQUIRED`는 실제 환경을 관측한 값이 아니다. Application 이름은 검토용 후보이며 기존 같은 객체의 이름·Owner를 먼저 대조한다.
 
+`root/`는 경로 A(기존 `openshift-gitops` Controller + 제한 Project) 최초 등록 입력으로 값이 해소되어 있다(`namespace: openshift-gitops`, `targetRevision`은 활성화 PR 병합 커밋의 전체 SHA). `bootstrap/`·`reuse/`·`new-namespace/`는 위 입력 대기 값을 그대로 유지한다. 이 값 해소는 Runtime 수락이 아니며, 등록(`oc apply`)과 Valkey 선택 수동 Sync는 공유 Owner 재확인 후 별도 Run으로 수행한다. `targetRevision`을 올리려면 Git 변경·리뷰 후 다시 apply한다.
+
 [h-gitops Issue #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5)와 [D 리뷰](https://github.com/seokpan/seokpan-hybrid-gitops/pull/9#pullrequestreview-5413591924)는 공유 Controller Namespace `openshift-gitops`, 대상 `seokpan-argotest`의 managed-by 유지, 4조 사전 공지를 기록한다. 실제 적용 직전에 D/공유 Owner가 Instance·Context/권한·기존 라벨 값/Controller 일치·공유 사용 수락을 다시 확인한다. 이 Source 작업은 Runtime 조회·공지 발송·실제값 반영이 아니다. 새 Namespace는 managed-by 필요 값·지원 동작·생성/관리 Owner까지 확인하며 추정 라벨을 넣지 않는다.
 
 ## 경로 선택과 단일 Owner
@@ -38,7 +40,7 @@ make preview ENVIRONMENT=lab
 4. 승인한 동일 Source/Image/설정 조합의 활성화 변경 후 App 최초 수동 Sync. Ready·Client/TLS/AUTH·FE/API/WSS·업무·종료를 실제 새 Run에 기록한다.
 5. 수락 후 별도 변경에서 App AutoSync/SelfHeal을 검토한다. Root/Platform 수동·자동 Prune 보류를 유지한다.
 
-모든 후보 Application은 autoSync·삭제 finalizer·강제 Replace/Force를 넣지 않는다. `FailOnSharedResource=true`는 Argo 추적 충돌을 검출하는 보조이며, 추적되지 않는 기존 객체나 외부 Apply Owner를 모두 판별하는 보장은 아니다. 외부 Owner 대조가 필요하다. 보호 객체의 `Prune=false,Delete=false`는 Argo 동작을 제한하는 선언이며 직접 Namespace 삭제나 다른 Controller/사용자 삭제를 막는 보장은 아니다. 실제 격리된 Case로 별도 확인한다.
+모든 후보 Application은 autoSync·삭제 finalizer·강제 Replace/Force를 넣지 않는다. `FailOnSharedResource=true`는 Argo 추적 충돌을 검출하는 보조이며, 추적되지 않는 기존 객체나 외부 Apply Owner를 모두 판별하는 보장은 아니다. 외부 Owner 대조가 필요하다. `argocd.argoproj.io/sync-options` metadata annotation은 그 객체 자신에만 적용되며 Application이 관리하는 하위 리소스의 보호가 아니다. 등록 대상 `root/` Application은 관리 리소스 전체의 기본값을 `spec.syncPolicy.syncOptions`의 `Prune=false`, `Delete=false`로 둔다(Argo CD 3.4 이상 문서에서 확인한 위치이며 실제 Controller 버전과 동작은 등록 후 확인한다). 보호 객체의 `Prune=false,Delete=false`는 Argo 동작을 제한하는 선언이며 직접 Namespace 삭제나 다른 Controller/사용자 삭제를 막는 보장은 아니다. 실제 격리된 Case로 별도 확인한다.
 
 ## 정리 방법과 범위
 
