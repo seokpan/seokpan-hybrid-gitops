@@ -21,7 +21,8 @@ images:
 # Internal Registry in the same namespace; D reported default-SA Pull success.
 patches:
   # 작성자: 정태훈 / 작성 날짜: 2026/10/06
-  # Initial lab candidates from GitOps #14; replicas stay held at zero.
+  # Initial lab candidates from GitOps #14. Stage 2 (GitOps #26): lab FE/BE replicas 1,
+  # release-state source-reviewed-runtime-unverified. Base and recovery stay held at zero.
   # D must check actual scheduling/pressure during the staged first startup.
   - target: {kind: Deployment, name: backend}
     patch: |-
@@ -29,7 +30,10 @@ patches:
       kind: Deployment
       metadata:
         name: backend
+        annotations:
+          seokpan.io/release-state: source-reviewed-runtime-unverified
       spec:
+        replicas: 1
         template:
           spec:
             containers:
@@ -43,7 +47,10 @@ patches:
       kind: Deployment
       metadata:
         name: frontend
+        annotations:
+          seokpan.io/release-state: source-reviewed-runtime-unverified
       spec:
+        replicas: 1
         template:
           spec:
             containers:

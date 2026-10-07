@@ -3,7 +3,7 @@ kind: Route
 metadata:
   name: frontend
 spec:
-  host: lab-host-input-required.invalid
+  host: seokpan-lab.apps.demo2.ocp4lab.com
   to: {kind: Service, name: frontend}
   port: {targetPort: http}
   tls: {termination: edge, insecureEdgeTerminationPolicy: Redirect}
@@ -13,7 +13,7 @@ kind: Route
 metadata:
   name: backend-api
 spec:
-  host: lab-host-input-required.invalid
+  host: seokpan-lab.apps.demo2.ocp4lab.com
   path: /api/v1
   to: {kind: Service, name: backend}
   port: {targetPort: http}
@@ -26,7 +26,7 @@ metadata:
   annotations:
     haproxy.router.openshift.io/timeout-tunnel: 1h
 spec:
-  host: lab-host-input-required.invalid
+  host: seokpan-lab.apps.demo2.ocp4lab.com
   path: /ws/v1
   to: {kind: Service, name: backend}
   port: {targetPort: http}
