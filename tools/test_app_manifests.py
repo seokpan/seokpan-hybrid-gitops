@@ -505,6 +505,26 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
                 data["redis.conf"] = original + "\n" + appended + "\n"
                 self.assertTrue(self.blockers(resources))
 
+    def test_recovery_config_rejects_shell_comment_escape_and_quote_concatenation(self):
+        for old, changed in (("port 0", "port 0 # unsupported inline comment"),
+                             ("port 0", r"port \0"),
+                             ("protected-mode yes", 'protected-mode y"e"s')):
+            with self.subTest(config_line=changed):
+                resources = self.fixture()
+                data = self.resource(resources, "ConfigMap", "recovery-redis-config")["data"]
+                data["redis.conf"] = data["redis.conf"].replace(old, changed)
+                self.assertTrue(self.blockers(resources))
+
+    def test_recovery_config_preserves_literal_quotes_comments_and_line_endings(self):
+        resources = self.fixture()
+        data = self.resource(resources, "ConfigMap", "recovery-redis-config")["data"]
+        data["redis.conf"] = ("  # reviewed transport configuration\n" + data["redis.conf"]
+                              .replace("protected-mode yes", 'PROTECTED-MODE "yes"')
+                              .replace('tls-protocols "TLSv1.2 TLSv1.3"',
+                                       "TLS-PROTOCOLS 'TLSv1.2 TLSv1.3'"))
+        data["redis.conf"] = data["redis.conf"].replace("\n", "\r\n")
+        self.assertEqual(self.blockers(resources), [])
+
     def test_backend_effective_configuration_cannot_override_reviewed_targets(self):
         def container(rs):
             return self.resource(rs, "Deployment", "backend")["spec"]["template"]["spec"]["containers"][0]
