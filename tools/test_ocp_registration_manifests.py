@@ -102,6 +102,46 @@ class RegistrationBoundaries(unittest.TestCase):
                 objects = candidate(); objects[index]["metadata"][field] = value
                 self.assertTrue(check(objects))
 
+    def test_skip_reconcile_annotation_is_rejected(self):
+        for index in (0, 1):
+            for value in ("true", "false", True):
+                with self.subTest(index=index, value=value):
+                    objects = candidate()
+                    objects[index]["metadata"]["annotations"]["argocd.argoproj.io/skip-reconcile"] = value
+                    self.assertTrue(check(objects))
+
+    def test_unreviewed_argocd_and_other_annotations_are_rejected(self):
+        for index in (0, 1):
+            for key in ("argocd.argoproj.io/sync-wave", "argocd.argoproj.io/hook", "example.org/policy"):
+                with self.subTest(index=index, key=key):
+                    objects = candidate(); objects[index]["metadata"]["annotations"][key] = "unreviewed"
+                    self.assertTrue(check(objects))
+
+    def test_unexpected_metadata_labels_are_rejected(self):
+        for index in (0, 1):
+            for labels in ({"argocd.argoproj.io/instance": "other-root"},
+                           {"app.kubernetes.io/part-of": "other-policy"}, None, [], "invalid"):
+                with self.subTest(index=index, labels=labels):
+                    objects = candidate(); objects[index]["metadata"]["labels"] = labels
+                    self.assertTrue(check(objects))
+
+    def test_annotation_values_and_extra_metadata_fields_are_rejected(self):
+        for index in (0, 1):
+            for annotations in ({}, None, [], "invalid"):
+                objects = candidate(); objects[index]["metadata"]["annotations"] = annotations
+                self.assertTrue(check(objects))
+            objects = candidate()
+            objects[index]["metadata"]["annotations"]["seokpan.io/release-state"] = "runtime-pass"
+            self.assertTrue(check(objects))
+            objects = candidate(); objects[index]["metadata"]["generateName"] = "unreviewed-"
+            self.assertTrue(check(objects))
+
+    def test_explicit_empty_labels_preserve_the_reviewed_candidate(self):
+        objects = candidate()
+        for obj in objects:
+            obj["metadata"]["labels"] = {}
+        self.assertEqual(check(objects), [])
+
     def test_malformed_missing_and_duplicate_mapping_keys_are_rejected(self):
         for text in ("", "[]", "[", "---\n---", "kind: AppProject\nkind: Application\n"):
             self.assertTrue(registration_blockers(text, SHA))
