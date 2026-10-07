@@ -2,14 +2,14 @@
 
 목적은 D의 [h-gitops Issue #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5)에 실제 Kustomize 선언을 인계하고, C의 Offline Recovery에서 소비할 App·새 Redis Source와 Secret/CA 경계를 마련하는 것이다. RTO/RPO 숫자를 정하거나 실제 복구 결과를 대신하는 자료가 아니다.
 
-현재 결과는 **입력 대기 Source 후보**이며 실제 Kustomize Build·선언 검사는 Source CI로 확인한다. Lab/Recovery FE/BE의 승인 Harbor Digest는 [Image 인계 카드](../handoff/OCP_SOURCE_HANDOFF_20261005.md)에 반영했다. lab 내부 Registry 복사/Pull은 D 보고로 수신했으며, 환경별 최종 대상·CA/Secret과 실제 배포 검증은 남았다. `INPUT_REQUIRED`와 예약 `.invalid` 주소는 실제 값이 아니며, FE/BE와 새 Recovery Redis 모두 `replicas: 0`을 유지해 기동을 보류했다. 이 Render를 Apply/Sync하거나 Recovery Bundle의 검증본으로 사용하지 않는다. 변경 전 1차 자산은 수정하지 않는다. `make preview`는 진단용이고 `make release-manifest`는 미해결 입력/기동 보류가 있으면 출력 파일 생성을 거부한다.
+현재 결과는 **입력 대기 Source 후보**이며 실제 Kustomize Build·선언 검사는 Source CI로 확인한다. Lab/Recovery FE/BE의 승인 Harbor Digest는 [Image 인계 카드](../handoff/OCP_SOURCE_HANDOFF_20261005.md)에 반영했다. lab 내부 Registry 복사/Pull은 D 보고로 수신했으며, 환경별 최종 대상·CA/Secret과 실제 배포 검증은 남았다. `INPUT_REQUIRED`와 예약 `.invalid` 주소는 실제 값이 아니며, FE/BE, lab 전용 Valkey, 새 Recovery Redis 모두 `replicas: 0`을 유지해 기동을 보류했다. 이 Render를 Apply/Sync하거나 Recovery Bundle의 검증본으로 사용하지 않는다. 변경 전 1차 자산은 수정하지 않는다. `make preview`는 진단용이고 `make release-manifest`는 미해결 입력/기동 보류가 있으면 출력 파일 생성을 거부한다.
 
 ## 출처와 실제 변경
 
 원 lab 자료는 D가 인계한 `reference/ocp-lab-original`의 전체 SHA `259e73b0fac1af40f7bb7b43bd1982410d1df150`이다. 원문은 참고 Branch에 보존하고 main에 중복 이관하지 않는다. 원 lab Render 성공은 새 Image/연결 계약의 lab 성공이 아니다.
 
 - `base`: FE/BE Deployment·Service·비민감 ConfigMap. Source의 8080/8000과 Health URI, `/tmp` 쓰기 경로, 종료 유예를 연결했다. 고정 UID/GID·Registry Pull Secret·lab CA·Host·hostAliases·Redis StatefulSet은 공통 선언에 넣지 않았다.
-- `overlays/lab`: #5의 `seokpan-argotest` 대상. D의 내부 Registry 복사·같은 Index Digest와 default SA의 워커 Pull 4건 보고를 수신해 FE/BE 주소를 내부 Registry로 전환했다. lab 전용 Harbor Pull Secret 패치는 제거했다. 이는 기존 Secret 객체 삭제가 아니다. 새 Valkey 선언·실제 Data/Schema·Host/권한·사용창 및 Runtime 시험은 남았고 replicas0을 유지한다.
+- `overlays/lab`: #5의 `seokpan-argotest` 대상. D의 내부 Registry 복사·같은 Index Digest와 default SA의 워커 Pull 4건 보고를 수신해 FE/BE 주소를 내부 Registry로 전환했다. lab 전용 Harbor Pull Secret 패치는 제거했다. 이는 기존 Secret 객체 삭제가 아니다. lab 전용 Valkey 7.2 StatefulSet(`lab-redis`, replicas 0)·내부 headless Service·비민감 설정(`redis.conf`, `redis-runtime.conf`)을 추가했다. 이미지는 lab 내부 Registry의 digest(`seokpan-argotest/valkey@sha256:ef0f9fb5…`)이고 서버 TLS/AUTH Secret(`lab-redis-server-tls`, `lab-redis-server-auth`)과 `backend-redis-ca`는 Source 밖에서 공급한다(D 보고). Cloud는 관리형 Valkey를 쓰므로 이 선언을 쓰지 않는다. 실제 Data/Schema·Host/권한·사용창과 Pod 기동·임의 UID·TLS/AUTH Runtime 시험은 남았고 replicas0을 유지한다.
 - `overlays/recovery`: 격리 전용 VM의 **직접 DB TLS** 대상 설정과 **새 Recovery Redis TLS/AUTH**의 App 연결·별도 StatefulSet·내부 Service·비민감 설정 후보. 기존 `recovery-harbor-pull` 참조를 유지하며 lab의 별도 참조와 구분한다. 실제 Secret 공급·Harbor/보존 사본 접근·Workload Pull은 별도 수락한다. B의 Redis 선언 배선은 포함했으며 C의 실제 버전·저장소·영속성·자원·CA/AUTH 공급과 실행 검증은 남았다. 기존 1차 Redis와 Cloud Redis Runtime을 재사용·복제하지 않는다. Recovery 진입 경로는 실제 플랫폼·Host/TLS 확인 전 선언하지 않았다.
 
 Redis URL은 `rediss://<host>:<port>/0`이며 인증정보를 넣지 않는다. 별도 `SEOKPAN_REDIS_AUTH_TOKEN` Secret과 CA/Hostname 검증을 사용한다. 과거 lab의 `redis://`·hostAliases·10/31 만료 CA·기존 이미지 Digest를 새로운 연결 계약에 복사하지 않았다. 현재 세부 변수는 App 이관 묶음의 연결 Source 개정과 대조한다.
