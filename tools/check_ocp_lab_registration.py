@@ -12,6 +12,11 @@ REPO = "https://github.com/seokpan/seokpan-hybrid-gitops.git"
 DESTINATION = {"server": "https://kubernetes.default.svc", "namespace": "seokpan-argotest"}
 KINDS = {("apps", "Deployment"), ("apps", "StatefulSet"),
          ("", "Service"), ("", "ConfigMap"), ("route.openshift.io", "Route")}
+ANNOTATIONS = {
+    "argocd.argoproj.io/sync-options": "Prune=false,Delete=false",
+    "seokpan.io/release-state": "input-required-no-runtime-validation",
+}
+METADATA_FIELDS = {"name", "namespace", "annotations", "labels"}
 
 
 class UniqueLoader(yaml.SafeLoader):
@@ -46,14 +51,19 @@ def registration_blockers(rendered, workload_sha):
         blockers = []
         for obj in objects:
             metadata = obj["metadata"]
+            if not isinstance(metadata, dict):
+                raise ValueError
             if obj["apiVersion"] != "argoproj.io/v1alpha1" or \
                     metadata["name"] != NAME or metadata["namespace"] != CONTROLLER:
                 blockers.append("controller object API/name/namespace does not match path A")
+            if set(metadata) - METADATA_FIELDS:
+                blockers.append("controller metadata contains unreviewed fields")
+            if metadata.get("annotations") != ANNOTATIONS:
+                blockers.append("controller annotations must exactly match the reviewed allowlist")
+            if metadata.get("labels", {}) != {}:
+                blockers.append("controller labels must be absent or an empty mapping")
             if metadata.get("finalizers") or metadata.get("ownerReferences") or "operation" in obj:
                 blockers.append("controller registration must not cascade, adopt or start a sync operation")
-            if metadata.get("annotations", {}).get("argocd.argoproj.io/sync-options") != \
-                    "Prune=false,Delete=false":
-                blockers.append("controller object prune/delete protections differ")
         spec = project["spec"]
         if set(spec) - {"description", "sourceRepos", "destinations", "clusterResourceWhitelist",
                         "clusterResourceBlacklist", "namespaceResourceWhitelist"}:
