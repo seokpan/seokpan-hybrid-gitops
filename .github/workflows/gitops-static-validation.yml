@@ -173,17 +173,16 @@ jobs:
               for obj in objects:
                   kind = obj.get("kind")
                   if kind in {"Deployment", "StatefulSet"}:
-                      # Stage 1: only the lab Overlay StatefulSet lab-redis may be active.
-                      # Every other workload (base, lab FE/BE) must stay held at zero replicas.
-                      stage1_valkey = (path == "apps/overlays/lab" and kind == "StatefulSet"
-                                       and obj["metadata"]["name"] == "lab-redis")
-                      if stage1_valkey:
+                      # Stage 2: only lab Overlay workloads (lab-redis, backend, frontend) may be active.
+                      # Base and every other Overlay must stay held at zero replicas.
+                      lab_active = path == "apps/overlays/lab"
+                      if lab_active:
                           state = obj["metadata"].get("annotations", {}).get("seokpan.io/release-state")
                           if obj["spec"].get("replicas") != 1 or state != "source-reviewed-runtime-unverified":
-                              raise SystemExit("Diagnostic lab-redis must be exactly Stage 1 "
+                              raise SystemExit("Diagnostic lab workloads must be exactly Stage 2 "
                                                "(replicas 1, source-reviewed-runtime-unverified)")
                       elif obj["spec"].get("replicas") != 0:
-                          raise SystemExit("Diagnostic workloads other than lab-redis must remain held at zero replicas")
+                          raise SystemExit("Diagnostic workloads outside the lab Overlay must remain held at zero replicas")
                   if kind == "Application":
                       if "automated" in obj["spec"].get("syncPolicy", {}) or obj["metadata"].get("finalizers"):
                           raise SystemExit("Diagnostic Applications must remain manual/non-cascading")
@@ -212,7 +211,7 @@ jobs:
               "Source: " + head + "\n\n"
               "This artifact preserves eight Kustomize source previews and their hashes/object inventory.\n"
               "INPUT_REQUIRED/.invalid, manual Applications and suspended Migration remain.\n"
-              "Only the lab Overlay StatefulSet lab-redis is declared Stage-1 active (replicas 1, source-reviewed-runtime-unverified); backend, frontend and base workloads remain at zero replicas.\n"
+              "Only lab Overlay workloads (lab-redis, backend, frontend) are declared Stage-2 active (replicas 1, source-reviewed-runtime-unverified); base and recovery workloads remain at zero replicas.\n"
               "This artifact is a source preview, not a deploy/Sync Release; the Stage-1 Valkey gate and the full lab Release Gate are separate checks.\n"
               "Do not Apply/Sync these previews. No cluster, registry, Secret, DB, AWS or runtime acceptance was performed.\n"
               "Path alternatives are source comparisons, not a sequence to apply together.\n"
