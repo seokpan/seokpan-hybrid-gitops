@@ -64,10 +64,11 @@ class AppManifestBoundaries(unittest.TestCase):
         for env in self.renders:
             for dep in self.workloads(env):
                 with self.subTest(env=env, app=dep["metadata"]["name"]):
-                    # Stage-1 lab activation: only the lab Valkey may run. Every other
-                    # workload in every environment must stay held at zero.
+                    # Stage-2 lab activation: every lab workload (Valkey, FE, BE) runs once.
+                    # Base-derived recovery and every other environment stay held at zero.
                     lab_valkey = env == "lab" and dep["kind"] == "StatefulSet"
-                    self.assertEqual(dep["spec"]["replicas"], 1 if lab_valkey else 0)
+                    lab_active = env == "lab"
+                    self.assertEqual(dep["spec"]["replicas"], 1 if lab_active else 0)
                     container = dep["spec"]["template"]["spec"]["containers"][0]
                     if env in {"lab", "recovery"} and dep["kind"] == "Deployment":
                         approved = {
@@ -90,7 +91,7 @@ class AppManifestBoundaries(unittest.TestCase):
                     else:
                         self.assertIn("INPUT_REQUIRED", container["image"])
                     state = dep["metadata"]["annotations"]["seokpan.io/release-state"]
-                    if lab_valkey:
+                    if lab_active:
                         self.assertEqual(state, "source-reviewed-runtime-unverified")
                     else:
                         self.assertIn("input-required", state)
@@ -337,7 +338,7 @@ class AppManifestBoundaries(unittest.TestCase):
     def test_release_gate_withholds_draft_and_does_not_overwrite_previous_file(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "recovery.yaml"
-            for env in ("lab", "recovery"):
+            for env in ("recovery",):  # lab passes the full gate since Stage 2
                 result = subprocess.run(
                     [sys.executable, str(ROOT / "tools/render_release.py"), env,
                      "--output", str(output), "--kustomize", KUSTOMIZE],

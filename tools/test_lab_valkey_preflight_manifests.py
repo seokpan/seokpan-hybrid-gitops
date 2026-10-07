@@ -143,19 +143,24 @@ class LabValkeyPreflight(unittest.TestCase):
              "--kustomize", "/nonexistent/kustomize"], capture_output=True, text=True)
         self.assertEqual(broken.returncode, 2)
 
-    def test_full_lab_release_gate_still_withholds_while_fe_be_are_held(self):
+    def test_full_lab_release_gate_passes_after_stage2_and_recovery_still_withholds(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run(
                 [sys.executable, str(ROOT / "tools/render_release.py"), "lab",
                  "--output", str(Path(tmp) / "lab.yaml"), "--kustomize", KUSTOMIZE],
                 capture_output=True, text=True)
-            self.assertEqual(result.returncode, 2)
-            self.assertIn("zero-replica activation hold", result.stderr)
-            self.assertFalse((Path(tmp) / "lab.yaml").exists())
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((Path(tmp) / "lab.yaml").exists())
+            held = subprocess.run(
+                [sys.executable, str(ROOT / "tools/render_release.py"), "recovery",
+                 "--output", str(Path(tmp) / "recovery.yaml"), "--kustomize", KUSTOMIZE],
+                capture_output=True, text=True)
+            self.assertEqual(held.returncode, 2)
+            self.assertFalse((Path(tmp) / "recovery.yaml").exists())
 
 
 class Stage1ActivationBoundary(unittest.TestCase):
-    """Only the lab Valkey may run; every other workload keeps its hold."""
+    """Only lab workloads (Valkey, FE, BE) may run; base and recovery keep their hold."""
 
     def workloads(self, path):
         return [r for r in yaml.safe_load_all(build(path))
@@ -167,7 +172,7 @@ class Stage1ActivationBoundary(unittest.TestCase):
                 name = workload["metadata"]["name"]
                 state = workload["metadata"]["annotations"]["seokpan.io/release-state"]
                 with self.subTest(path=path, workload=name):
-                    if path == "apps/overlays/lab" and name == "lab-redis":
+                    if path == "apps/overlays/lab":
                         self.assertEqual(workload["spec"]["replicas"], 1)
                         self.assertEqual(state, "source-reviewed-runtime-unverified")
                     else:
