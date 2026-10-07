@@ -31,10 +31,36 @@ class RegistrationBoundaries(unittest.TestCase):
     def test_selected_two_object_synthetic_candidate_passes(self):
         self.assertEqual(check(candidate()), [])
 
-    def test_current_checked_in_placeholders_are_not_registration_ready(self):
+    def test_checked_in_workload_sha_must_match_the_explicit_comparison_input(self):
         objects = [yaml.safe_load((ROOT / "clusters/ocp-lab/root" / name).read_text())
                    for name in ("app-project.yaml", "app.yaml")]
         self.assertTrue(check(objects))
+
+    def test_checked_in_registered_source_matches_its_pinned_workload_sha(self):
+        objects = [yaml.safe_load((ROOT / "clusters/ocp-lab/root" / name).read_text())
+                   for name in ("app-project.yaml", "app.yaml")]
+        self.assertEqual(check(objects, objects[1]["spec"]["source"]["targetRevision"]), [])
+
+    def test_legacy_hold_or_runtime_pass_annotation_is_not_registration_ready(self):
+        for index in (0, 1):
+            for state in ("input-required-no-runtime-validation", "runtime-pass"):
+                with self.subTest(index=index, state=state):
+                    objects = candidate()
+                    objects[index]["metadata"]["annotations"]["seokpan.io/release-state"] = state
+                    self.assertTrue(check(objects))
+
+    def test_prune_delete_and_shared_resource_controls_are_all_required(self):
+        controls = ["FailOnSharedResource=true", "Prune=false", "Delete=false"]
+        for missing in controls:
+            with self.subTest(missing=missing):
+                objects = candidate()
+                objects[1]["spec"]["syncPolicy"] = {"syncOptions": [x for x in controls if x != missing]}
+                self.assertTrue(check(objects))
+        for extra in ("Prune=true", "Delete=true", "Force=true", "Replace=true"):
+            with self.subTest(extra=extra):
+                objects = candidate()
+                objects[1]["spec"]["syncPolicy"]["syncOptions"].append(extra)
+                self.assertTrue(check(objects))
 
     def test_extra_root_namespace_or_job_is_rejected(self):
         for kind in ("Application", "Namespace", "Job", "Secret"):
