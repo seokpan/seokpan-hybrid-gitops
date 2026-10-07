@@ -1,0 +1,115 @@
+# 작성자: 최유준 / 작성 날짜: 2026/10/06
+# Lab-only Valkey 7.2 (TLS + AUTH) for the isolated OCP lab Namespace.
+# Follows C's lab Redis Data standard v1.1 (GitOps #6) and the held Recovery
+# redis.yaml structure. The cloud overlay does not use this Pod (managed Valkey).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lab-redis
+  annotations:
+    seokpan.io/release-state: input-required-no-runtime-validation
+spec:
+  # Held Source only. B raises replicas after Image/Secret/CA review and manual Sync.
+  replicas: 0
+  serviceName: lab-redis
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lab-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lab-redis
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: redis
+          # Placeholder replaced by the lab overlay images entry (internal Registry digest).
+          image: seokpan-lab-valkey:INPUT_REQUIRED
+          imagePullPolicy: IfNotPresent
+          # The image default Entrypoint starts as root and switches user, which does not
+          # fit an arbitrary UID. The server is started directly (binary names checked on
+          # the pinned digest: valkey-server and valkey-cli exist). The password is read
+          # from C's protected include file, never from argv.
+          command: [valkey-server]
+          args: [/etc/seokpan/redis/redis.conf]
+          ports: [{name: redis-tls, containerPort: 6379, protocol: TCP}]
+          env:
+            # Probe-only AUTH. Both names are set because valkey-cli versions read
+            # different variables. Same Secret key as the server include (one token).
+            - name: REDISCLI_AUTH
+              valueFrom: {secretKeyRef: {name: lab-redis-server-auth, key: token}}
+            - name: VALKEYCLI_AUTH
+              valueFrom: {secretKeyRef: {name: lab-redis-server-auth, key: token}}
+          startupProbe:
+            tcpSocket: {port: redis-tls}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
+          # Readiness checks TLS + AUTH (PONG), not only an open port. No liveness probe:
+          # persistence is off, so an unmeasured restart would drop game state.
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - valkey-cli --tls --cacert /etc/seokpan/redis-server-tls/ca.crt --sni lab-redis.seokpan-argotest.svc -h 127.0.0.1 -p 6379 ping | grep -qx PONG
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: runtime-data, mountPath: /data}
+            - {name: redis-config, mountPath: /etc/seokpan/redis, readOnly: true}
+            - {name: server-tls, mountPath: /etc/seokpan/redis-server-tls, readOnly: true}
+            - {name: server-auth, mountPath: /etc/seokpan/redis-server-auth, readOnly: true}
+            - {name: runtime-config, mountPath: /etc/seokpan/redis-runtime, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+        - name: runtime-data
+          # Persistence is off (save "" / appendonly no). No PVC; data is lost with the Pod.
+          emptyDir: {sizeLimit: 256Mi}
+        - name: redis-config
+          configMap:
+            name: lab-redis-config
+            items: [{key: redis.conf, path: redis.conf}]
+        - name: server-tls
+          secret:
+            secretName: lab-redis-server-tls
+            defaultMode: 0440
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+              - {key: ca.crt, path: ca.crt}
+        - name: server-auth
+          secret:
+            secretName: lab-redis-server-auth
+            defaultMode: 0440
+            # Only the include file is mounted; the token key must not appear as a file.
+            items: [{key: redis-auth.conf, path: redis-auth.conf}]
+        - name: runtime-config
+          configMap:
+            name: lab-redis-runtime
+            items: [{key: redis-runtime.conf, path: redis-runtime.conf}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-redis
+spec:
+  # Internal governing DNS only; no NodePort/LoadBalancer/Route/external address.
+  type: ClusterIP
+  clusterIP: None
+  selector: {app.kubernetes.io/name: lab-redis}
+  ports: [{name: redis-tls, port: 6379, targetPort: redis-tls, protocol: TCP}]

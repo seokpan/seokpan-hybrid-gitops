@@ -57,7 +57,8 @@ class AppManifestBoundaries(unittest.TestCase):
                 self.assertFalse(forbidden & {r["kind"] for r in resources})
                 statefulsets = self.by_kind(env, "StatefulSet")
                 self.assertEqual([r["metadata"]["name"] for r in statefulsets],
-                                 ["recovery-redis"] if env == "recovery" else [])
+                                 {"recovery": ["recovery-redis"],
+                                  "lab": ["lab-redis"]}.get(env, []))
 
     def test_no_candidate_can_start_pods_with_missing_release_inputs(self):
         for env in self.renders:
@@ -76,6 +77,13 @@ class AppManifestBoundaries(unittest.TestCase):
                                 "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/")
                                 for name, image in approved.items()}
                         self.assertEqual(container["image"], approved[dep["metadata"]["name"]])
+                    elif env == "lab" and dep["kind"] == "StatefulSet":
+                        # Lab-only Valkey 7.2.14 index digest copied to the lab internal
+                        # Registry with the digest preserved (GitOps #14).
+                        self.assertEqual(
+                            container["image"],
+                            "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/"
+                            "valkey@sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e")
                     else:
                         self.assertIn("INPUT_REQUIRED", container["image"])
                     self.assertIn("input-required", dep["metadata"]["annotations"][
@@ -226,6 +234,69 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertIn("recovery-direct-db", recovery["SEOKPAN_DATABASE_EXPECTED_HOST"])
         self.assertEqual(recovery["SEOKPAN_REDIS_EXPECTED_HOST"],
                          "recovery-redis.recovery-input-required.svc")
+
+    def test_lab_valkey_source_is_held_tls_auth_unpersisted_and_internal_only(self):
+        redis, = self.by_kind("lab", "StatefulSet")
+        pod = redis["spec"]["template"]["spec"]
+        container, = pod["containers"]
+        self.assertEqual(redis["metadata"]["name"], "lab-redis")
+        self.assertEqual(redis["spec"]["replicas"], 0)
+        self.assertEqual(container["command"], ["valkey-server"])
+        self.assertEqual(container["args"], ["/etc/seokpan/redis/redis.conf"])
+        self.assertNotIn("volumeClaimTemplates", redis["spec"])
+        # The password is read from C's protected include and never from argv.
+        self.assertFalse(any("requirepass" in a.lower() for a in container["args"]))
+        # startup is TCP, readiness proves TLS + AUTH (PONG), and there is no liveness.
+        self.assertEqual(container["startupProbe"]["tcpSocket"]["port"], "redis-tls")
+        self.assertNotIn("livenessProbe", container)
+        command = " ".join(container["readinessProbe"]["exec"]["command"])
+        self.assertIn("valkey-cli --tls", command)
+        self.assertIn("--sni lab-redis.seokpan-argotest.svc ", command)
+        self.assertIn("grep -qx PONG", command)
+        self.assertNotIn(" -a ", command)
+        self.assertNotIn("--pass", command)
+        token = {"secretKeyRef": {"name": "lab-redis-server-auth", "key": "token"}}
+        self.assertEqual({e["name"]: e["valueFrom"] for e in container["env"]},
+                         {"REDISCLI_AUTH": token, "VALKEYCLI_AUTH": token})
+        self.assertTrue(all("value" not in e for e in container["env"]))
+        self.assertEqual(container["resources"], {"requests": {"cpu": "50m", "memory": "128Mi"},
+                                                  "limits": {"memory": "256Mi"}})
+        volumes = {v["name"]: v for v in pod["volumes"]}
+        # Only the include file is mounted; the token key must not appear as a file.
+        self.assertEqual(volumes["server-auth"]["secret"]["secretName"], "lab-redis-server-auth")
+        self.assertEqual(volumes["server-auth"]["secret"]["items"],
+                         [{"key": "redis-auth.conf", "path": "redis-auth.conf"}])
+        self.assertEqual(volumes["server-tls"]["secret"]["secretName"], "lab-redis-server-tls")
+        self.assertEqual({i["key"] for i in volumes["server-tls"]["secret"]["items"]},
+                         {"tls.crt", "tls.key", "ca.crt"})
+        for name in ("server-auth", "server-tls"):
+            self.assertEqual(volumes[name]["secret"]["defaultMode"], 0o440)
+        for name in ("tmp", "runtime-data"):
+            self.assertEqual(volumes[name]["emptyDir"], {"sizeLimit": "256Mi"})
+        mounts = {m["name"]: m for m in container["volumeMounts"]}
+        for name in ("redis-config", "server-tls", "server-auth", "runtime-config"):
+            self.assertTrue(mounts[name]["readOnly"])
+            self.assertNotIn("subPath", mounts[name])
+        # Same-Namespace internal Registry digest, not a placeholder or a mutable tag.
+        self.assertRegex(container["image"],
+                         r"^image-registry\.openshift-image-registry\.svc:5000/"
+                         r"seokpan-argotest/valkey@sha256:[0-9a-f]{64}$")
+        service = next(r for r in self.by_kind("lab", "Service")
+                       if r["metadata"]["name"] == "lab-redis")
+        self.assertEqual(service["spec"]["type"], "ClusterIP")
+        self.assertEqual(service["spec"]["clusterIP"], "None")
+        self.assertEqual(service["spec"]["selector"], redis["spec"]["selector"]["matchLabels"])
+        # Fixed transport is the same non-secret file as the Recovery Source, TLS only.
+        config = next(r["data"]["redis.conf"] for r in self.by_kind("lab", "ConfigMap")
+                      if r["metadata"]["name"].startswith("lab-redis-config-"))
+        self.assertEqual(config, (ROOT / "apps/overlays/recovery/redis.conf").read_text(
+            encoding="utf-8"))
+        self.assertIn("port 0", config.splitlines())
+        runtime = next(r["data"]["redis-runtime.conf"] for r in self.by_kind("lab", "ConfigMap")
+                       if r["metadata"]["name"].startswith("lab-redis-runtime-"))
+        self.assertEqual([l for l in runtime.splitlines() if l and not l.startswith("#")],
+                         ["maxmemory 192mb", "maxmemory-policy noeviction", 'save ""',
+                          "appendonly no", "dir /data"])
 
     def test_recovery_redis_source_is_held_isolated_and_uses_external_tls_auth(self):
         redis, = self.by_kind("recovery", "StatefulSet")

@@ -5,6 +5,7 @@ namespace: seokpan-argotest
 resources:
   - ../../base
   - routes.yaml
+  - redis.yaml
 images:
   - name: seokpan-backend
     newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend
@@ -12,6 +13,11 @@ images:
   - name: seokpan-frontend
     newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/frontend
     digest: sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9
+  # Lab-only Valkey 7.2.14 index digest, copied to the lab internal Registry with
+  # the digest preserved (GitOps #14). Same-Namespace default ServiceAccount pull.
+  - name: seokpan-lab-valkey
+    newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/valkey
+    digest: sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e
 # Internal Registry in the same namespace; D reported default-SA Pull success.
 patches:
   # 작성자: 정태훈 / 작성 날짜: 2026/10/06
@@ -51,3 +57,7 @@ configMapGenerator:
   - name: backend-config
     behavior: merge
     envs: [runtime.env]
+  - name: lab-redis-config
+    files: [redis.conf]
+  - name: lab-redis-runtime
+    files: [redis-runtime.conf]
