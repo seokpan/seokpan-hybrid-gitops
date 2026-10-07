@@ -13,6 +13,7 @@ import argparse
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 
@@ -141,12 +142,36 @@ def lab_valkey_blockers(rendered):
                 blockers.append("Valkey config and Secret mounts must be read-only without subPath")
                 break
 
-        conf = cfg["data"]["redis.conf"].splitlines()
-        if [l.strip() for l in conf if re.match(r"\s*port\s", l)] != ["port 0"] or \
-                "tls-port 6379" not in conf or "tls-auth-clients no" not in conf or \
-                "include /etc/seokpan/redis-runtime/redis-runtime.conf" not in conf or \
-                "include /etc/seokpan/redis-server-auth/redis-auth.conf" not in conf:
+        # Valkey lowercases directive names and applies later occurrences again.
+        # Inspect parsed directives, not matching text that an appended setting
+        # can override. Authentication remains in the protected external include.
+        directives = [shlex.split(line, comments=True)
+                      for line in cfg["data"]["redis.conf"].splitlines()]
+        directives = [[tokens[0].lower(), *tokens[1:]]
+                      for tokens in directives if tokens]
+        includes = [
+            ["include", "/etc/seokpan/redis-runtime/redis-runtime.conf"],
+            ["include", "/etc/seokpan/redis-server-auth/redis-auth.conf"],
+        ]
+        fixed = {
+            "bind": ["0.0.0.0"], "protected-mode": ["yes"],
+            "port": ["0"], "tls-port": ["6379"], "tls-auth-clients": ["no"],
+            "tls-cert-file": ["/etc/seokpan/redis-server-tls/tls.crt"],
+            "tls-key-file": ["/etc/seokpan/redis-server-tls/tls.key"],
+            "tls-ca-cert-file": ["/etc/seokpan/redis-server-tls/ca.crt"],
+            "tls-protocols": ["TLSv1.2 TLSv1.3"],
+            "daemonize": ["no"], "logfile": [""],
+        }
+        if any(d[0] not in {"include", *fixed} for d in directives) or \
+                any(directives.count(include) != 1 for include in includes) or \
+                len([d for d in directives if d[0] == "include"]) != 2:
             blockers.append("Valkey config must be TLS-only 6379 with the reviewed includes")
+        for key, value in fixed.items():
+            entries = [d for d in directives if d[0] == key]
+            if entries != [[key, *value]] or any(
+                    include in directives and directives.index(entries[0]) < directives.index(include)
+                    for include in includes):
+                blockers.append("Valkey config must be TLS-only 6379 with the reviewed includes")
         runtime = [l for l in run["data"]["redis-runtime.conf"].splitlines()
                    if l.strip() and not l.startswith("#")]
         if runtime != RUNTIME_LINES:
