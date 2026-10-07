@@ -97,21 +97,28 @@ class LabValkeyPreflight(unittest.TestCase):
                 "tls-cert-file /etc/seokpan/redis-server-tls/tls.crt", "tls-cert-file /other/tls.crt"),
             "missing protected mode": lambda text: text.replace("protected-mode yes", ""),
             "invalid quoted directive": lambda text: text + '\ntls-protocols "unclosed\n',
+
+            "inline hash text": lambda text: text.replace("port 0", "port 0 # inline text"),
+            "inline hash after include": lambda text: text.replace(
+                "include /etc/seokpan/redis-runtime/redis-runtime.conf",
+                "include /etc/seokpan/redis-runtime/redis-runtime.conf # inline text"),
+            "shell quote concatenation": lambda text: text.replace("protected-mode yes", 'protected-mode "ye"s'),
+            "unquoted backslash escape": lambda text: text.replace("protected-mode yes", "protected-mode y\\es"),
         }
         for name, change in cases.items():
             with self.subTest(boundary=name):
                 self.assertTrue(lab_valkey_blockers(self.mutated(replace_config(change))))
 
-    def test_transport_directive_case_comments_and_spacing_preserve_reviewed_values(self):
+    def test_transport_directive_case_full_line_comments_and_spacing_preserve_reviewed_values(self):
         def mutate(rs):
             config = self.configmap(rs, "lab-redis-config-")["data"]
             lines = []
             for line in config["redis.conf"].splitlines():
                 if line.strip() and not line.lstrip().startswith("#"):
                     name, arguments = line.split(None, 1)
-                    line = "  " + name.upper() + "  " + arguments + "  # transport setting"
+                    line = "  " + name.upper() + "  " + arguments + "  "
                 lines.append(line)
-            config["redis.conf"] = "\n".join(lines) + "\n"
+            config["redis.conf"] = "# transport settings\n" + "\n".join(lines) + "\n"
         self.assertEqual(lab_valkey_blockers(self.mutated(mutate)), [])
 
     def test_gate_does_not_depend_on_fe_be_db_or_route_inputs(self):

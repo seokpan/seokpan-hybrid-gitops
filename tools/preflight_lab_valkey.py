@@ -13,7 +13,6 @@ import argparse
 import os
 from pathlib import Path
 import re
-import shlex
 import subprocess
 import sys
 
@@ -29,6 +28,26 @@ SELECTOR = {"app.kubernetes.io/name": "lab-redis"}
 TOKEN_REF = {"secretKeyRef": {"name": "lab-redis-server-auth", "key": "token"}}
 RUNTIME_LINES = ["maxmemory 192mb", "maxmemory-policy noeviction", 'save ""',
                  "appendonly no", "dir /data"]
+
+
+def transport_directives(config):
+    """Accept only the reviewed one-argument Valkey config syntax.
+
+    Valkey skips full-line comments, but inline # text is another argument.
+    Shell quote concatenation and escapes are outside this Source allowlist.
+    """
+    pattern = re.compile(r"""([A-Za-z][A-Za-z0-9-]*)[ \t]+(?:"([^"\\\r\n]*)"|'([^'\\\r\n]*)'|([^ \t\r\n"'\\]+))""")
+    directives = []
+    for line in config.split("\n"):
+        line = line.strip(" \t\r")
+        if not line or line.startswith("#"):
+            continue
+        match = pattern.fullmatch(line)
+        if match is None:
+            raise ValueError("unsupported public Valkey directive syntax")
+        name, *values = match.groups()
+        directives.append([name.lower(), next(v for v in values if v is not None)])
+    return directives
 
 
 def lab_valkey_blockers(rendered):
@@ -145,10 +164,7 @@ def lab_valkey_blockers(rendered):
         # Valkey lowercases directive names and applies later occurrences again.
         # Inspect parsed directives, not matching text that an appended setting
         # can override. Authentication remains in the protected external include.
-        directives = [shlex.split(line, comments=True)
-                      for line in cfg["data"]["redis.conf"].splitlines()]
-        directives = [[tokens[0].lower(), *tokens[1:]]
-                      for tokens in directives if tokens]
+        directives = transport_directives(cfg["data"]["redis.conf"])
         includes = [
             ["include", "/etc/seokpan/redis-runtime/redis-runtime.conf"],
             ["include", "/etc/seokpan/redis-server-auth/redis-auth.conf"],
