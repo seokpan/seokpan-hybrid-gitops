@@ -3,7 +3,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: seokpan-ocp-lab-app
-  namespace: gitops-controller-input-required
+  namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
     seokpan.io/release-state: input-required-no-runtime-validation
@@ -11,7 +11,7 @@ spec:
   project: seokpan-ocp-lab-app
   source:
     repoURL: https://github.com/seokpan/seokpan-hybrid-gitops.git
-    targetRevision: GITOPS_REVISION_INPUT_REQUIRED
+    targetRevision: 244b48b885d7ac645c402e561a032ae65a8f3461
     path: apps/overlays/lab
   destination:
     server: https://kubernetes.default.svc

@@ -3,7 +3,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
   name: seokpan-ocp-lab-app
-  namespace: gitops-controller-input-required
+  namespace: openshift-gitops
   annotations:
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
     seokpan.io/release-state: input-required-no-runtime-validation

@@ -38,20 +38,38 @@ class OCPControlBoundaries(unittest.TestCase):
         self.assertFalse(any(x["kind"] in {"Namespace", "Secret", "Job"} for x in root))
 
     def test_all_applications_are_manual_pinned_input_and_non_cascading(self):
-        apps = [x for x in self.resources() if x["kind"] == "Application"]
+        apps = [(path, x) for path, rows in self.renders.items()
+                for x in rows if x["kind"] == "Application"]
         self.assertEqual(len(apps), 4)
-        for app in apps:
-            with self.subTest(app=app["metadata"]["name"]):
+        for path, app in apps:
+            with self.subTest(path=path, app=app["metadata"]["name"]):
+                # Protections apply to every Application, registered or not.
                 self.assertNotIn("automated", app["spec"]["syncPolicy"])
                 self.assertEqual(app["spec"]["syncPolicy"]["syncOptions"],
                                  ["FailOnSharedResource=true"])
                 self.assertFalse(app["metadata"].get("finalizers"))
-                self.assertEqual(app["metadata"]["namespace"], "gitops-controller-input-required")
-                self.assertEqual(app["spec"]["source"]["targetRevision"],
-                                 "GITOPS_REVISION_INPUT_REQUIRED")
                 self.assertEqual(app["spec"]["source"]["repoURL"],
                                  "https://github.com/seokpan/seokpan-hybrid-gitops.git")
                 self.assertTrue((ROOT / app["spec"]["source"]["path"]).is_dir())
+                if path == "clusters/ocp-lab/root":
+                    continue  # registered inputs are asserted below
+                self.assertEqual(app["metadata"]["namespace"], "gitops-controller-input-required")
+                self.assertEqual(app["spec"]["source"]["targetRevision"],
+                                 "GITOPS_REVISION_INPUT_REQUIRED")
+
+    def test_registered_root_targets_shared_controller_project_and_pinned_sha(self):
+        # Only clusters/ocp-lab/root carries real registration inputs (path A, restricted
+        # Project); the other candidate paths keep their input-required placeholders.
+        root = self.renders["clusters/ocp-lab/root"]
+        project = next(x for x in root if x["kind"] == "AppProject")
+        app = next(x for x in root if x["kind"] == "Application")
+        self.assertEqual(project["metadata"]["namespace"], "openshift-gitops")
+        self.assertEqual(app["metadata"]["namespace"], "openshift-gitops")
+        self.assertEqual(app["spec"]["project"], project["metadata"]["name"])
+        self.assertEqual(app["spec"]["destination"],
+                         {"server": "https://kubernetes.default.svc", "namespace": "seokpan-argotest"})
+        # A full commit SHA, never a branch/tag or the placeholder.
+        self.assertRegex(app["spec"]["source"]["targetRevision"], r"^[0-9a-f]{40}$")
 
     def test_app_project_cannot_own_secret_namespace_operator_or_migration(self):
         app = next(x for x in self.renders["clusters/ocp-lab/root"] if x["kind"] == "AppProject")
