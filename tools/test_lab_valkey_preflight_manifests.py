@@ -235,3 +235,30 @@ class Stage1ActivationBoundary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RuntimeLineSemantics(unittest.TestCase):
+    def test_unicode_and_control_separators_cannot_create_runtime_directives(self):
+        original = list(yaml.safe_load_all(build("apps/overlays/lab")))
+        for separator in ("\x0b", "\x0c", "\x85", "\u2028", "\u2029"):
+            with self.subTest(separator=repr(separator)):
+                resources = copy.deepcopy(original)
+                runtime = LabValkeyPreflight.configmap(resources, "lab-redis-runtime-")["data"]
+                runtime["redis-runtime.conf"] = separator.join(
+                    runtime["redis-runtime.conf"].splitlines()) + "\n"
+                self.assertTrue(lab_valkey_blockers(yaml.safe_dump_all(resources)))
+
+    def test_runtime_crlf_remains_a_valid_line_ending(self):
+        resources = list(yaml.safe_load_all(build("apps/overlays/lab")))
+        runtime = LabValkeyPreflight.configmap(resources, "lab-redis-runtime-")["data"]
+        runtime["redis-runtime.conf"] = runtime["redis-runtime.conf"].replace("\n", "\r\n")
+        self.assertEqual(lab_valkey_blockers(yaml.safe_dump_all(resources)), [])
+
+    def test_fixed_directive_diagnostic_contains_name_but_not_value(self):
+        resources = list(yaml.safe_load_all(build("apps/overlays/lab")))
+        config = LabValkeyPreflight.configmap(resources, "lab-redis-config-")["data"]
+        config["redis.conf"] = config["redis.conf"].replace(
+            "port 0", "port SYNTHETIC_PRIVATE_VALUE")
+        messages = lab_valkey_blockers(yaml.safe_dump_all(resources))
+        self.assertTrue(any("directive port" in message for message in messages))
+        self.assertNotIn("SYNTHETIC_PRIVATE_VALUE", " ".join(messages))

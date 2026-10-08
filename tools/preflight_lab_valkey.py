@@ -164,6 +164,8 @@ def lab_valkey_blockers(rendered):
         # Valkey lowercases directive names and applies later occurrences again.
         # Inspect parsed directives, not matching text that an appended setting
         # can override. Authentication remains in the protected external include.
+        # This gate cannot inspect its Secret bytes or runtime readability;
+        # approved external content and live TLS/AUTH remain separate checks.
         directives = transport_directives(cfg["data"]["redis.conf"])
         includes = [
             ["include", "/etc/seokpan/redis-runtime/redis-runtime.conf"],
@@ -187,8 +189,9 @@ def lab_valkey_blockers(rendered):
             if entries != [[key, *value]] or any(
                     include in directives and directives.index(entries[0]) < directives.index(include)
                     for include in includes):
-                blockers.append("Valkey config must be TLS-only 6379 with the reviewed includes")
-        runtime = [l for l in run["data"]["redis-runtime.conf"].splitlines()
+                blockers.append("Valkey config must be TLS-only 6379 with the reviewed includes "
+                                "(directive " + key + ")")
+        runtime = [l.rstrip("\r") for l in run["data"]["redis-runtime.conf"].split("\n")
                    if l.strip() and not l.startswith("#")]
         if runtime != RUNTIME_LINES:
             blockers.append("Valkey runtime config must be unpersisted noeviction below the limit")
