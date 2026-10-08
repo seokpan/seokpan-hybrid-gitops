@@ -49,7 +49,7 @@ python3 tools/check_ocp_lab_registration.py \
   --workload-sha "$WORKLOAD_SHA"
 ```
 
-현재 보류 Source의 namespace/SHA를 그대로 넣으면 BLOCKED다. 도구는 Source YAML의 정확 Repo/Kind/목적지/SHA·수동/삭제 보호 및 metadata를 비교한다. SHA 존재·리뷰·병합, Stage-1/전체 Workload Gate, 실제 Owner/RBAC/사용창·Secret 공급은 증명하지 않는다. 진단 Render를 Apply하지 않는다.
+등록 선언 비교에는 해당 Source의 `targetRevision`과 정확히 일치하는 Workload SHA를 사용한다. 현재 Stage 2 등록 Source는 SHA B `bfee2669e62bf823969ce224e5599eccace5d024`를 참조한다. 이 Source를 SHA B로 비교하면 선언 구조 검사는 PASS이며 실제 승인·등록·Sync는 NOT VERIFIED다. SHA A `244b48b885d7ac645c402e561a032ae65a8f3461`로 비교하면 SHA 불일치로 BLOCKED다. 이전 보류 Source의 placeholder namespace/SHA도 계속 BLOCKED다. 도구는 Source YAML의 정확 Repo/Kind/목적지/SHA·수동/삭제 보호 및 metadata를 비교한다. SHA 존재·리뷰·병합, Stage-1/전체 Workload Gate, 실제 Owner/RBAC/사용창·Secret 공급은 증명하지 않는다. 진단 Render를 Apply하지 않는다.
 
 metadata는 현재 검토된 `name`·`namespace`·`annotations`와 비어 있는 선택적 `labels`만 허용한다. annotation은 `argocd.argoproj.io/sync-options=Prune=false,Delete=false`, `seokpan.io/release-state=source-reviewed-runtime-unverified`의 두 항목/값(#24 이후 등록 입력 해소 상태)에 고정한다. Application의 `spec.syncPolicy`는 자동 Sync 없이 `syncOptions`의 `FailOnSharedResource=true`·`Prune=false`·`Delete=false` 세 항목만 허용한다. 이는 #24로 병합된 등록 Source와의 비교이며 실제 승인·등록·Sync·Runtime 검증을 대신하지 않는다. 과거 `input-required-no-runtime-validation`이나 Runtime PASS 표기는 등록 준비값으로 통과시키지 않는다. `skip-reconcile`·sync-wave/hook·추적/정책 label 등 추가 metadata는 모두 차단한다. live 객체의 자동 metadata를 정제 없이 넣어 통과시키는 도구가 아니다. 이후 등록 Source에서 metadata를 바꿀 때도 allowlist·시험을 같은 PR에서 명시적으로 리뷰한다. Workload의 Stage-1 release-state와 Controller metadata는 서로 다른 객체/경계다.
 
