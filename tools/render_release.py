@@ -8,13 +8,14 @@ import argparse
 import os
 from pathlib import Path
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
 from urllib.parse import urlsplit
 
 import yaml
+
+from preflight_lab_valkey import transport_directives
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -234,10 +235,9 @@ def recovery_manifest_blockers(rendered, namespace, registry):
             blockers.append("Recovery Redis must consume its nonsecret transport configuration read-only")
         config = next(r["data"]["redis.conf"] for r in resources if r.get("kind") == "ConfigMap"
                       and r["metadata"]["name"] == config_name)
-        directives = [shlex.split(line, comments=True) for line in config.splitlines()]
-        # Redis lowercases directive names before looking them up. Preserve
-        # values/paths, but apply the same name semantics to this Source gate.
-        directives = [[tokens[0].lower(), *tokens[1:]] for tokens in directives if tokens]
+        # Use the same reviewed literal syntax as the lab gate. Shell inline
+        # comments and escapes must not turn invalid server config into a PASS.
+        directives = transport_directives(config)
         auth_include = ["include", "/etc/seokpan/redis-server-auth/redis-auth.conf"]
         runtime_include = ["include", "/etc/seokpan/redis-runtime/redis-runtime.conf"]
         fixed = {
