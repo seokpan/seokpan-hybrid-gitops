@@ -238,7 +238,7 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertEqual(self.by_kind("recovery", "Route"), [])
         self.assertEqual(self.by_kind("recovery", "Ingress"), [])
         recovery = self.backend_config("recovery")["data"]
-        self.assertIn("recovery-direct-db", recovery["SEOKPAN_DATABASE_EXPECTED_HOST"])
+        self.assertEqual(recovery["SEOKPAN_DATABASE_EXPECTED_HOST"], "192.168.54.60")
         self.assertEqual(recovery["SEOKPAN_REDIS_EXPECTED_HOST"],
                          "recovery-redis.recovery-input-required.svc")
 
