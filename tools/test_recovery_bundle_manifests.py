@@ -80,6 +80,37 @@ class RecoveryBundleTests(unittest.TestCase):
                 artifact.unlink();artifact.symlink_to(outside)
                 with self.assertRaises(Invalid):check(root)
             finally:outside.unlink()
+    @unittest.skipUnless(os.name == "posix", "POSIX nested directory protection is verified on Linux CI")
+    def test_nested_directory_permissions_and_owner_are_rejected(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);c=self.bundle(root);nested=root/"sub";nested.mkdir(mode=0o700)
+            row=next(r for r in c["artifacts"] if r["role"]=="database_dump")
+            (root/row["path"]).rename(nested/"dump.fixture");row["path"]="sub/dump.fixture";self.save(root,c)
+            self.assertEqual(check(root)["result"],"SOURCE_INVENTORY_HASH_AND_MANIFEST_PASS")
+            nested.chmod(0o777)
+            with self.assertRaisesRegex(Invalid,"BUNDLE_DIRECTORY_OWNER_OR_MODE"):check(root)
+            nested.chmod(0o700)
+            original=Path.lstat
+            def changed_owner(path,*args,**kwargs):
+                actual=original(path,*args,**kwargs)
+                if path==nested:
+                    return SimpleNamespace(st_mode=actual.st_mode,st_uid=os.getuid()+1,st_file_attributes=0)
+                return actual
+            with patch.object(Path,"lstat",changed_owner):
+                with self.assertRaisesRegex(Invalid,"BUNDLE_DIRECTORY_OWNER_OR_MODE"):check(root)
+            extra=root/"empty-unprotected";extra.mkdir();extra.chmod(0o777)
+            with self.assertRaisesRegex(Invalid,"BUNDLE_DIRECTORY_OWNER_OR_MODE"):check(root)
+    @unittest.skipUnless(os.name == "posix", "POSIX special files are verified on Linux CI")
+    def test_untracked_and_tracked_fifo_are_rejected_without_reading(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);c=self.bundle(root);fifo=root/"untracked-pipe";os.mkfifo(fifo,mode=0o600)
+            with self.assertRaisesRegex(Invalid,"BUNDLE_SPECIAL_FILE"):check(root)
+            fifo.unlink()
+            row=next(r for r in c["artifacts"] if r["role"]=="database_dump")
+            artifact=root/row["path"];artifact.unlink();os.mkfifo(artifact,mode=0o600)
+            with self.assertRaises(Invalid):check(root)
     def test_cli_failure_does_not_expose_inputs(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);c=self.bundle(root);c["secret_references"]["do-not-expose"]=["sentinel-password"];self.save(root,c)

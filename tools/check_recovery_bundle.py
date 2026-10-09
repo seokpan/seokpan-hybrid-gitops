@@ -32,6 +32,11 @@ def pairs(rows):
 def exact(obj, keys):
     if not isinstance(obj,dict) or set(obj)!=set(keys): raise Invalid("INVENTORY_FIELDS")
 
+def protected_directory(s):
+    if not stat.S_ISDIR(s.st_mode): raise Invalid("BUNDLE_DIRECTORY")
+    if os.name == "posix" and (s.st_uid != os.getuid() or stat.S_IMODE(s.st_mode) != 0o700):
+        raise Invalid("BUNDLE_DIRECTORY_OWNER_OR_MODE")
+
 def safe_file(root, name):
     if not isinstance(name,str) or "\\" in name or not name or len(name)>255:
         raise Invalid("BUNDLE_PATH")
@@ -39,11 +44,12 @@ def safe_file(root, name):
     if relative.is_absolute() or any(p in ("..", ".") for p in relative.parts) or relative.as_posix()!=name or ":" in name:
         raise Invalid("BUNDLE_PATH")
     path=root
-    for part in relative.parts:
+    for index,part in enumerate(relative.parts):
         path=path/part
         s=path.lstat()
         if stat.S_ISLNK(s.st_mode) or getattr(s,"st_file_attributes",0)&getattr(stat,"FILE_ATTRIBUTE_REPARSE_POINT",1024):
             raise Invalid("BUNDLE_LINK")
+        if index < len(relative.parts)-1: protected_directory(s)
     if os.name == "posix" and (path.stat().st_uid != os.getuid() or stat.S_IMODE(path.stat().st_mode) != 0o600):
         raise Invalid("BUNDLE_FILE_OWNER_OR_MODE")
     if not path.is_file() or path.stat().st_size==0 or path.stat().st_size>64*1024**3:
@@ -96,12 +102,18 @@ def check(root, inventory_name="inventory.json"):
         paths.add(row["path"].casefold())
         if digest(path)!=row["sha256"]: raise Invalid("ARTIFACT_HASH_MISMATCH")
         roles[row["role"]]=path
-    # Only tracked artifacts and their enclosing directories are accepted. Archives
-    # remain opaque hashed files; their contents/importability are not asserted.
+    # Every subdirectory must be owner-protected; only tracked regular files
+    # are accepted. Archives remain opaque hashed files, never restored here.
     allowed=paths|{inventory_name.casefold()}
     for item in root.rglob("*"):
-        if item.is_symlink() or getattr(item.lstat(),"st_file_attributes",0)&1024: raise Invalid("BUNDLE_LINK")
-        if item.is_file() and item.relative_to(root).as_posix().casefold() not in allowed: raise Invalid("UNTRACKED_BUNDLE_FILE")
+        state=item.lstat()
+        if stat.S_ISLNK(state.st_mode) or getattr(state,"st_file_attributes",0)&1024: raise Invalid("BUNDLE_LINK")
+        if stat.S_ISDIR(state.st_mode):
+            protected_directory(state)
+        elif not stat.S_ISREG(state.st_mode):
+            raise Invalid("BUNDLE_SPECIAL_FILE")
+        elif item.relative_to(root).as_posix().casefold() not in allowed:
+            raise Invalid("UNTRACKED_BUNDLE_FILE")
     protected=roles["protected_inputs"]
     with protected.open("rb") as stream: header=stream.read(64)
     if not header.startswith((b"age-encryption.org/v1\n",b"-----BEGIN AGE ENCRYPTED FILE-----")):
