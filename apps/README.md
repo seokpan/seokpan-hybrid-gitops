@@ -114,3 +114,5 @@ Cloud 선언 후보는 [cloud](overlays/cloud/README.md)에 별도 후속 변경
 
 
 첫 OCP 인계의 Project/Application·Owner·입력·Migration/삭제 보호와 실제 시험 순서는 [lab 제어 선언](../clusters/ocp-lab/README.md)·[인계 묶음](../handoff/OCP_FIRST_DEPLOYMENT.md)을 따른다. App Overlay 자체는 Namespace/Secret/Job을 소유하지 않으며 기존 0 Replica/미확정 입력을 유지한다.
+
+Recovery Bundle 파일 대조는 [별도 인벤토리 검사](../handoff/recovery/README.md)를 사용한다. 파일 해시/Manifest 비교 PASS와 실제 복원·독립 사본·RTO/RPO 수락을 구분한다.
