@@ -24,7 +24,7 @@ App main `c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3`의 `Settings`는 `legacy`/`c
 | DB | `cloud` Profile, 정확한 RDS Host/Port/DB 허용 대상, Runtime URL 별도 Secret | C의 목적 GRANT/Schema·직접 TLS DNS/SAN·CA·`identity_svc`/`game_svc`와 App Lock/Driver 연결 검증 |
 | Redis | 정확한 Primary Endpoint, `rediss://host:port/0`, 별도 AUTH Secret | C의 Redis Primary DNS·TLS/AUTH·CA 개정, Reader/평문/인증정보 포함 URL을 사용하지 않음 |
 | 사용자 진입 | 동일 Host FE·`/api/v1`·`/ws/v1`, ClusterIP Service, Edge TLS와 HTTPS Redirect | ROSA 기본 Ingress Host·기본 신뢰 인증서·Route Admitted·CORS/Origin·HTTPS/WSS·Timeout/재접속 실측. lab의 Host/1h WS Timeout을 복사하지 않음 |
-| Namespace/플랫폼 | 실제 Namespace는 입력 대기, Object 생성/Label/RBAC/NP/Root/AppProject 없음 | B/A/D의 Context·Namespace Owner·플랫폼/Argo 실효 권한/NetworkPolicy 인계. 초기 App 자동 Sync 보류·최초 수동 검증과 별도 Secret 공급 Gate |
+| Namespace/플랫폼 | 실제 Namespace는 입력 대기, [별도 플랫폼 계약 후보](../../../platform/cloud/README.md) 준비; 실제 Object/Label/RBAC/NP/Root/AppProject 적용 없음 | B/A/D의 Context·Namespace Owner·플랫폼/Argo 실효 권한/NetworkPolicy 인계. 초기 App 자동 Sync 보류·최초 수동 검증과 별도 Secret 공급 Gate |
 | 자원/배치 | base의 SCC 관련 선언·Probes·쓰기 경로와 Rolling 유지, 목표 Preview에 AZ soft spread/Host preferred | Image 임의 UID·쓰기를 실제 확인, Requests/Limits·프로세스·identity/game 각 DB Pool·종료 중 연결과 플랫폼/UWM 부하를 함께 측정 |
 
 Secret/CA 논리 이름과 Key는 공통 [App 계약](../../README.md)과 같다. Secret 값/Object와 공개 CA 공급은 별도 Owner가 맡는다. Migration 계정/Job·Redis StatefulSet·DB Pod·Namespace·Cluster RBAC를 Cloud App Overlay에 추가하지 않았다. AWS HA와 온프레미스 Restore Recovery는 별개 검증이다.

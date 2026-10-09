@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "environment": "cloud",
+  "app_namespace": "fixture-cloud",
+  "argo_namespace": "fixture-argo",
+  "gitops_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "dedicated_namespace": true,
+  "router_namespace": "fixture-router",
+  "router_pod_labels": {
+    "app": "fixture-router"
+  },
+  "include_pod_logs": false
+}
