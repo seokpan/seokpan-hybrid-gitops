@@ -1,6 +1,10 @@
 # OCP 최초 배포 인계 — Source 검토에서 실제 lab 수락까지
 
-> **현재 인계 기준: 2026-10-07.** GitOps #17은 `fa3cea313e2cb1533d9703082619b085a3de25cc`에 병합됐다. 아래 Source·공급 보고와 실제 배포/업무 수락은 서로 다른 상태다.
+> **인계 기록 기준: 2026-10-07.** GitOps #17은 `fa3cea313e2cb1533d9703082619b085a3de25cc`에 병합됐다. 아래 Source·공급 보고와 실제 배포/업무 수락은 서로 다른 상태다.
+
+> **기록 범위:** 아래 인계 상태·Digest·Replica 수·시험 결과는 **2026-10-07 기준 기록**이다. 본문의 “현재”도 그 시점을 뜻하며, 이후 Source 개정이나 실행 중 Workload의 현황을 대신하지 않는다. 이전 공급·검사 기록은 재현 근거로 보존한다.
+>
+> **실행 전 확인:** 사용할 검토된 전체 GitOps SHA에서 [lab 선언](../apps/overlays/lab/kustomization.yaml)과 [별도 Migration Job](../operations/ocp-lab/migration/job.yaml)을 대조한다. 이후 공급은 [Image 공급 #32](https://github.com/seokpan/seokpan-hybrid-gitops/issues/32), Run #5 Image 참조 후보와 검토 상태는 [PR #37](https://github.com/seokpan/seokpan-hybrid-gitops/pull/37)을 따른다. Source 병합·승인과 실제 교체·Migration 실행 승인은 구분한다.
 
 | 항목 | 이미 반영된 Source·수신 보고 | 남은 직접 조건 |
 |---|---|---|
