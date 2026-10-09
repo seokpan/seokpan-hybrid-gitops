@@ -76,10 +76,12 @@ class AppManifestBoundaries(unittest.TestCase):
                             "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9",
                         }
                         if env == "lab":
-                            approved = {name: image.replace(
-                                "harbor.seokpan.soldesk.store/seokpan-hybrid/",
-                                "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/")
-                                for name, image in approved.items()}
+                            # Run5 supply accepted in GitOps #32; node Pull/runtime
+                            # remain separate. Recovery keeps its prior supply.
+                            approved = {
+                                "backend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend@sha256:ab0e141abbdf43c5589f9b0af7df38f168044541deec1e10ec7295cb394f4290",
+                                "frontend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/frontend@sha256:d26d5385a02ed557863abcba9b3e3cde1fac3ceaf2671f170cdc081729620ac4",
+                            }
                         self.assertEqual(container["image"], approved[dep["metadata"]["name"]])
                     elif env == "lab" and dep["kind"] == "StatefulSet":
                         # Lab-only Valkey 7.2.14 index digest copied to the lab internal
