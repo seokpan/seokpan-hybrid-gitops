@@ -92,7 +92,7 @@ def check(root, inventory_name="inventory.json"):
         raise Invalid("IMMUTABLE_LOCAL_IMAGES")
     rows=c["artifacts"]
     if not isinstance(rows,list) or len(rows)!=len(ROLES): raise Invalid("ARTIFACT_ROLES")
-    roles={}; paths=set()
+    roles={}; paths=set(); allowed={inventory_name}
     for row in rows:
         exact(row,("role","path","sha256"))
         if not isinstance(row["role"],str) or row["role"] not in ROLES or row["role"] in roles: raise Invalid("ARTIFACT_ROLES")
@@ -100,11 +100,13 @@ def check(root, inventory_name="inventory.json"):
         path=safe_file(root,row["path"])
         if row["path"].casefold() in paths or row["path"].casefold()==inventory_name.casefold(): raise Invalid("DUPLICATE_ARTIFACT_PATH")
         paths.add(row["path"].casefold())
+        allowed.add(row["path"])
         if digest(path)!=row["sha256"]: raise Invalid("ARTIFACT_HASH_MISMATCH")
         roles[row["role"]]=path
     # Every subdirectory must be owner-protected; only tracked regular files
     # are accepted. Archives remain opaque hashed files, never restored here.
-    allowed=paths|{inventory_name.casefold()}
+    # Casefold prevents portable-name collisions above; membership below must
+    # preserve spelling so case variants cannot masquerade as tracked files.
     for item in root.rglob("*"):
         state=item.lstat()
         if stat.S_ISLNK(state.st_mode) or getattr(state,"st_file_attributes",0)&1024: raise Invalid("BUNDLE_LINK")
@@ -112,7 +114,7 @@ def check(root, inventory_name="inventory.json"):
             protected_directory(state)
         elif not stat.S_ISREG(state.st_mode):
             raise Invalid("BUNDLE_SPECIAL_FILE")
-        elif item.relative_to(root).as_posix().casefold() not in allowed:
+        elif item.relative_to(root).as_posix() not in allowed:
             raise Invalid("UNTRACKED_BUNDLE_FILE")
     protected=roles["protected_inputs"]
     with protected.open("rb") as stream: header=stream.read(64)

@@ -111,6 +111,50 @@ class RecoveryBundleTests(unittest.TestCase):
             row=next(r for r in c["artifacts"] if r["role"]=="database_dump")
             artifact=root/row["path"];artifact.unlink();os.mkfifo(artifact,mode=0o600)
             with self.assertRaises(Invalid):check(root)
+    def test_untracked_case_variant_inventory_and_artifact_are_rejected(self):
+        for name in ("Inventory.JSON", "DATABASE_DUMP.fixture", "SUB/DUMP.fixture"):
+            with self.subTest(name=name),tempfile.TemporaryDirectory() as td:
+                root=Path(td);c=self.bundle(root)
+                if "/" in name:
+                    folder=root/"sub";folder.mkdir(mode=0o700)
+                    row=next(r for r in c["artifacts"] if r["role"]=="database_dump")
+                    (root/row["path"]).rename(folder/"dump.fixture")
+                    row["path"]="sub/dump.fixture";self.save(root,c)
+                    original=folder/"dump.fixture"
+                else:original=root/("inventory.json" if name=="Inventory.JSON" else "database_dump.fixture")
+                extra=root/name
+                if extra.exists():self.skipTest("requires a case-sensitive filesystem; covered by Linux CI")
+                extra.parent.mkdir(mode=0o700,exist_ok=True)
+                extra.write_bytes(original.read_bytes());extra.chmod(0o600)
+                with self.assertRaisesRegex(Invalid,"UNTRACKED_BUNDLE_FILE"):check(root)
+                r=subprocess.run([sys.executable,str(ROOT/"tools/check_recovery_bundle.py"),str(root)],capture_output=True,text=True,timeout=15)
+                self.assertEqual(r.returncode,2)
+                self.assertNotIn(str(root),r.stdout+r.stderr)
+                self.assertNotIn(name,r.stdout+r.stderr)
+    def test_mismatched_case_in_inventory_and_artifact_paths_is_rejected(self):
+        for inventory in (True,False):
+            with self.subTest(inventory=inventory),tempfile.TemporaryDirectory() as td:
+                root=Path(td);self.bundle(root)
+                original=root/("inventory.json" if inventory else "database_dump.fixture")
+                renamed=root/("Inventory.JSON" if inventory else "DATABASE_DUMP.fixture")
+                temporary=root/"rename-staging";original.rename(temporary);temporary.rename(renamed)
+                with self.assertRaises((Invalid,OSError)):check(root)
+    def test_exact_mixed_case_registered_paths_are_accepted(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);c=self.bundle(root);folder=root/"Sub";folder.mkdir(mode=0o700)
+            row=next(r for r in c["artifacts"] if r["role"]=="database_dump")
+            (root/row["path"]).rename(folder/"Dump.FIXTURE");row["path"]="Sub/Dump.FIXTURE";self.save(root,c)
+            temporary=root/"rename-staging";(root/"inventory.json").rename(temporary);temporary.rename(root/"Inventory.JSON")
+            self.assertEqual(check(root,"Inventory.JSON")["result"],"SOURCE_INVENTORY_HASH_AND_MANIFEST_PASS")
+    def test_casefold_duplicate_registered_artifact_paths_remain_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);c=self.bundle(root);first=c["artifacts"][0];other=c["artifacts"][1]
+            (root/other["path"]).unlink()
+            other.update(path=first["path"].upper(),sha256=first["sha256"])
+            duplicate=root/other["path"]
+            if not duplicate.exists():duplicate.write_bytes((root/first["path"]).read_bytes());duplicate.chmod(0o600)
+            self.save(root,c)
+            with self.assertRaisesRegex(Invalid,"DUPLICATE_ARTIFACT_PATH"):check(root)
     def test_cli_failure_does_not_expose_inputs(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);c=self.bundle(root);c["secret_references"]["do-not-expose"]=["sentinel-password"];self.save(root,c)

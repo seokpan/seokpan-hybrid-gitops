@@ -6,7 +6,7 @@
 python3 tools/check_recovery_bundle.py /private/received-bundle
 ```
 
-`inventory.json`의 v1 계약은 `schema_version: 1`, `environment: recovery`, 승인 `namespace`·로컬 Harbor `registry`, 전체40자리 `source_revisions.app/gitops`, `images.backend/frontend/recovery-redis`의 실제 Harbor@sha256 참조, `server_command`, `secret_references`, `artifacts`다. Artifact 각 행은 `role`·Bundle 내부 상대 `path`·전체64자리 `sha256`만 갖는다. 경로 탈출·Symlink/reparse point·중복 JSON/경로·빠진 자료·추적되지 않은 파일·FIFO/socket 등 특수 파일·해시 불일치를 거부한다. 실제 입력/오류 원문/파일 내용은 판정 출력에 포함하지 않는다.
+`inventory.json`의 v1 계약은 `schema_version: 1`, `environment: recovery`, 승인 `namespace`·로컬 Harbor `registry`, 전체40자리 `source_revisions.app/gitops`, `images.backend/frontend/recovery-redis`의 실제 Harbor@sha256 참조, `server_command`, `secret_references`, `artifacts`다. Artifact 각 행은 `role`·Bundle 내부 상대 `path`·전체64자리 `sha256`만 갖는다. 경로 탈출·Symlink/reparse point·중복 JSON/경로·빠진 자료·추적되지 않은 파일·FIFO/socket 등 특수 파일·해시 불일치를 거부한다. 인벤토리/Artifact의 등록 경로는 실제 파일명·하위 폴더명과 대소문자까지 정확히 일치해야 한다. 등록되지 않은 대소문자 변형 파일도 거부하며, 등록 경로끼리 대소문자만 다른 중복은 이식 가능한 공급을 위해 계속 거부한다. 명시적으로 등록한 혼합 대소문자 경로 자체는 허용한다. 실제 입력/오류 원문/파일 내용은 판정 출력에 포함하지 않는다.
 
 필수 Artifact role은 `app_manifest`, `image_archive`, `database_dump`, `database_ca`, `redis_ca`, `protected_inputs`, `tool_archive`, `source_archive`다. 단일 Image Archive 내부에는 승인 FE/BE와 Recovery Engine을 포함하고, Dump 묶음에는 승인된 영속 Data 범위를 포함하도록 **별도 공급/내용 검증**한다. 이 검사는 압축파일을 열거나 DB를 읽거나 도구를 실행하지 않으므로 해시가 맞는 빈 의미의 Archive/Dump도 내용 검증 완료로 인정하지 않는다. Archive 내부 OCI index/blob·플랫폼·Source 개정·도구 의존성과 Dump DB/Schema/Data 시점은 공급 Owner 기록과 실제 Import/Restore에서 확인한다.
 
