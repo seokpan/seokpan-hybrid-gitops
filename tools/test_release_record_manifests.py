@@ -77,6 +77,20 @@ class RecordBoundaries(unittest.TestCase):
             (nested/'record.json').write_text(json.dumps(self.template()),encoding='utf-8')
             self.assertEqual(check_records(directory),1)
 
+    def test_json_extension_case_cannot_bypass_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp)/'releases';directory.mkdir()
+            nested=directory/'nested';nested.mkdir()
+            for suffix in ('.json', '.JSON', '.JsOn'):
+                with self.subTest(suffix=suffix):
+                    path=nested/('record'+suffix)
+                    path.write_text(json.dumps(self.template()),encoding='utf-8')
+                    self.assertEqual(check_records(directory),1)
+                    path.write_text('{}',encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError,'format failed'):
+                        check_records(directory)
+                    path.unlink()
+
     def test_release_source_directory_and_file_symlinks_rejected(self):
         if sys.platform == 'win32':
             self.skipTest('Real symlink regression executes on Linux CI')

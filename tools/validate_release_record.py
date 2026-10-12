@@ -58,7 +58,7 @@ def check_records(directory):
                 raise ValueError("Release source tree must not contain symlinks")
         for name in filenames:
             path = Path(parent) / name
-            if path.suffix != '.json':
+            if path.suffix.lower() != '.json':
                 continue
             if not path.is_file() or path.stat().st_size > 262144:
                 raise ValueError("Release record is not a bounded regular source file")
