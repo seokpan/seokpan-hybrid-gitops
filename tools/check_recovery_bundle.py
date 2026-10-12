@@ -166,7 +166,9 @@ def check(root, inventory_name="inventory.json"):
     exact(c, keys + (("database_restore",) if version == 2 else ()))
     if type(version) is not int or version not in (1, 2) or c["environment"]!="recovery":
         raise Invalid("INVENTORY_VERSION_OR_ENVIRONMENT")
-    if version == 2 and c["database_restore"] != DATABASE_RESTORE:
+    if version == 2 and (not isinstance(c["database_restore"], dict) or
+            type(c["database_restore"].get("rpo_limit_seconds")) is not int or
+            c["database_restore"] != DATABASE_RESTORE):
         raise Invalid("EXTERNAL_DATABASE_RESTORE_CONTRACT")
     if not isinstance(c["namespace"],str) or not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*",c["namespace"]) or len(c["namespace"])>63 or c["namespace"]=="default" or c["namespace"].startswith(("kube-","openshift-")) or "input-required" in c["namespace"]:
         raise Invalid("ISOLATED_NAMESPACE")

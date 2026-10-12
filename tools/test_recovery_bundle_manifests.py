@@ -185,7 +185,7 @@ class RecoveryBundleTests(unittest.TestCase):
             self.assertEqual(result["runtime_restore_independent_copy_identity_rto_rpo"],"NOT_VERIFIED")
 
     def test_sops_plaintext_nested_values_and_partial_encryption_rejected(self):
-        for value in ("sentinel-password", True, 12, None, {"nested": "sentinel-password"}, ["sentinel-password"], {}):
+        for value in ("sentinel-password", "", True, 12, None, {"nested": "sentinel-password"}, ["sentinel-password"], {}):
             with self.subTest(value_type=type(value).__name__),tempfile.TemporaryDirectory() as td:
                 root=Path(td); c=self.bundle(root); payload=self.sops_fixture()
                 payload["credentials"]["extra"]=value
@@ -234,6 +234,13 @@ class RecoveryBundleTests(unittest.TestCase):
                           ("database","other_db"),("rpo_limit_seconds",3600)):
             with self.subTest(key=key),tempfile.TemporaryDirectory() as td:
                 root=Path(td); c=self.version2(root); c["database_restore"][key]=value; self.save(root,c)
+                with self.assertRaisesRegex(Invalid,"EXTERNAL_DATABASE_RESTORE_CONTRACT"): check(root)
+
+    def test_v2_rpo_requires_integer_seconds(self):
+        for value in (1800.0, "1800", True):
+            with self.subTest(value_type=type(value).__name__),tempfile.TemporaryDirectory() as td:
+                root=Path(td); c=self.version2(root)
+                c["database_restore"]["rpo_limit_seconds"]=value; self.save(root,c)
                 with self.assertRaisesRegex(Invalid,"EXTERNAL_DATABASE_RESTORE_CONTRACT"): check(root)
 
     def test_v2_fixed_dump_cannot_masquerade_as_current_periodic(self):

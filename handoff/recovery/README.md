@@ -20,6 +20,8 @@ Recovery 서버 명령은 현행 Source/Gate의 `redis-server`와 맞아야 한�
 
 순서: C/A 대상·Namespace·저장소·DB/Engine/CA 입력 수락 → B Source/Release 대조 → D Image/도구와 C Dump/보호 자료 반입 → 이 로컬 검사 → 독립 사본/복원 Identity 확인 → 새 격리 Restore → Migration current → App/WS/새 게임/완료기록 확인 → RTO/RPO 실제 수락. 실제 자료 인계 전에는 기존 Recovery 0 Replica 보류와 INPUT_REQUIRED를 유지한다.
 
+SOPS 공급 계약은 YAML이다. SOPS JSON은 지원 형식에 포함하지 않는다. SOPS가 암호화하지 않는 빈 문자열도 평문 Leaf로 거부하므로, 사용하지 않는 선택 Key는 공급본에서 생략한다. 빈 값이 필수라면 계약을 먼저 검토하며 임의 암호문으로 바꾸지 않는다.
+
 ## 최신 periodic DB를 분리하는 v2 계약
 
 새 Bundle은 `schema_version: 2`를 사용한다. v1의 8개 role 중 `database_dump`를 제외한 보호 자산7개와 `database_restore`를 넣는다. 고정 덤프를 최신 DB 사본으로 승계하지 않는다. v1은 이전 사본 대조 호환용으로 유지되며 결과에 `LEGACY_FIXED_DUMP_NOT_CURRENT_RPO_EVIDENCE`를 표시한다.
