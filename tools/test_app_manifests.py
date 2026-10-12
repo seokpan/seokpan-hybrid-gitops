@@ -75,6 +75,11 @@ class AppManifestBoundaries(unittest.TestCase):
                             "backend": "harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6",
                             "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9",
                         }
+                        if env == "recovery":
+                            approved = {
+                                "backend": "harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f",
+                                "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee",
+                            }
                         if env == "lab":
                             approved = {name: image.replace(
                                 "harbor.seokpan.soldesk.store/seokpan-hybrid/",
