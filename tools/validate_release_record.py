@@ -26,9 +26,19 @@ def load_record(raw):
             result[key] = value
         return result
     try:
-        return json.loads(raw, object_pairs_hook=unique)
+        document = json.loads(raw, object_pairs_hook=unique)
     except RecursionError:
         raise ValueError("record nesting limit") from None
+    pending = [(document, 0)]
+    while pending:
+        value, depth = pending.pop()
+        if depth > 64:
+            raise ValueError("record nesting limit")
+        if isinstance(value, dict):
+            pending.extend((child, depth + 1) for child in value.values())
+        elif isinstance(value, list):
+            pending.extend((child, depth + 1) for child in value)
+    return document
 
 def check_records(directory):
     """Check candidate/run declarations; reject every symlink under releases."""
