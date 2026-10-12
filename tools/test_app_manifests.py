@@ -81,8 +81,8 @@ class AppManifestBoundaries(unittest.TestCase):
                                 "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee",
                             }
                         if env == "lab":
-                            # Run7 Harbor candidates reported by D; internal supply/Pull
-                            # and runtime remain unverified. Recovery keeps prior supply.
+                            # Run7 internal supply/default-SA Pull verified by D (#32).
+                            # Runtime remains unverified; Recovery keeps prior supply.
                             approved = {
                                 "backend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend@sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f",
                                 "frontend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/frontend@sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee",
