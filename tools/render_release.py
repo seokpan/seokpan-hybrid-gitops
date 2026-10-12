@@ -107,7 +107,18 @@ def recovery_manifest_blockers(rendered, namespace, registry):
                 ("Deployment", "backend"), ("Deployment", "frontend"),
                 ("StatefulSet", "recovery-redis")}:
             blockers.append("Recovery requires only its App workloads and the separate new Redis")
+        budgets = {
+            "frontend": {"requests": {"cpu": "25m", "memory": "32Mi"},
+                         "limits": {"cpu": "250m", "memory": "64Mi"}},
+            "backend": {"requests": {"cpu": "100m", "memory": "128Mi"},
+                        "limits": {"cpu": "500m", "memory": "256Mi"}},
+            "recovery-redis": {"requests": {"cpu": "100m", "memory": "512Mi"},
+                               "limits": {"cpu": "500m", "memory": "512Mi"}},
+        }
         for workload in workloads:
+            containers = workload["spec"]["template"]["spec"]["containers"]
+            if len(containers) != 1 or containers[0].get("resources") != budgets[workload["metadata"]["name"]]:
+                blockers.append("Recovery initial resource budget requires a reviewed Source change")
             if workload["apiVersion"] != "apps/v1":
                 blockers.append("Recovery workloads must use the reviewed Kubernetes API")
             if workload["spec"].get("replicas") != 1:
@@ -177,7 +188,7 @@ def recovery_manifest_blockers(rendered, namespace, registry):
             blockers.append("Recovery Backend Redis CA must be a required external reference")
         pod = redis["spec"]["template"]["spec"]
         container, = pod["containers"]
-        if container.get("command") != ["redis-server"] or \
+        if container.get("command") != ["valkey-server"] or \
                 container.get("args") != ["/etc/seokpan/redis/redis.conf"] or \
                 container.get("env") or container.get("envFrom"):
             blockers.append("Recovery Redis must read protected authentication from files, never argv/env")
@@ -249,10 +260,11 @@ def recovery_manifest_blockers(rendered, namespace, registry):
             "tls-protocols": ["TLSv1.2 TLSv1.3"],
             "daemonize": ["no"], "logfile": [""],
             "save": [""], "appendonly": ["no"], "maxmemory-policy": ["noeviction"],
+            "maxmemory": ["384mb"], "dir": ["/data"],
         }
         # Keep this public file limited to the declared transport/process
         # boundary and the reviewed transient-state policy. AUTH, replication
-        # and actual memory budgets require separate protected/external review.
+        # and actual RSS/peak acceptance require separate runtime review.
         if any(d[0] not in {"include", *fixed} for d in directives):
             blockers.append("Recovery public Redis configuration must contain only reviewed transport directives")
         if directives.count(auth_include) != 1 or directives.count(runtime_include) != 1 or \

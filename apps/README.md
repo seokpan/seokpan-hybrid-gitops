@@ -45,7 +45,7 @@ lab 활성화는 승인 FE/BE Image를 Kustomize `images.digest`로 고정하고
 
 ### 새 Recovery Redis Source와 C/A/D의 실제 입력
 
-**현재 엔진 선택과 보류 선언의 차이:** 목표는 Valkey 7.2 계열이다. 아래 `redis-server`·TCP Probe·입력 대기 Image/Volume은 기존 held Source의 인터페이스 설명이지 Valkey 기동/호환 수락 결과가 아니다. 실제 활성화 전 B/C/D는 승인 Image의 실행 파일, TLS/AUTH PING Probe, 임의 UID·쓰기/저장 정책을 선택한 뒤 `redis.yaml`·`redis.conf`·`tools/render_release.py`·관련 `test_*manifests.py`를 함께 개정·검증한다. C/A의 미확정 Volume·Digest를 추측해서 채우거나 검사 우회로 활성화하지 않는다.
+**현재 엔진 선택과 보류 선언의 차이:** Recovery 목표는 `seokpan-recovery`의 Valkey 7.2.14이며 초기 자원/메모리 계약은 아래 채택안이다. 아래 `valkey-server`·TCP Probe·입력 대기 Image/Volume은 기존 held Source의 인터페이스 설명이지 Valkey 기동/호환 수락 결과가 아니다. 실제 활성화 전 B/C/D는 승인 Image의 실행 파일, TLS/AUTH PING Probe, 임의 UID·쓰기/저장 정책을 선택한 뒤 `redis.yaml`·`redis.conf`·`tools/render_release.py`·관련 `test_*manifests.py`를 함께 개정·검증한다. C/A의 미확정 Volume·Digest를 추측해서 채우거나 검사 우회로 활성화하지 않는다.
 
 `redis.yaml`의 논리 이름은 `recovery-redis`이며 격리 Namespace 안의 Headless `ClusterIP` Service만 선언한다. Backend의 `rediss://recovery-redis.<격리 Namespace>.svc:6379/0`과 예상 Host를 함께 바꿔 같은 대상을 검증한다. 체크인 Namespace `recovery-input-required`는 승인된 실제 Namespace가 아니다. 다른 환경·1차 Redis 주소를 연결하거나 `FLUSHALL`로 초기화하는 절차는 넣지 않았다.
 
@@ -57,9 +57,9 @@ lab 활성화는 승인 FE/BE Image를 Kustomize `images.digest`로 고정하고
 | `recovery-redis-server-auth` Secret | `redis-auth.conf` 읽기 전용 Include | 비어 있지 않은 `requirepass`, Backend Token과 승인 개정 일치, 무인증/평문 인증 부재 |
 | `recovery-redis-runtime-input-required` 외부 ConfigMap | `redis-runtime.conf` 읽기 전용 Include | 실제 Engine의 `dir /data`·maxmemory와 Resource limit의 조합. AUTH 값은 넣지 않음. 영속성은 공개 설정에서 비활성화 |
 | Pod 전용 `emptyDir` | `/data` 쓰기 Mount | transient 상태, Pod 교체 시 유실. 실제 임의 UID 쓰기 권한·용량 확인 |
-| Local Harbor Redis Digest | `redis-server /etc/seokpan/redis/redis.conf` | 승인 Engine/TLS Binary·임의 UID·읽기 전용 RootFS와 필요한 쓰기 경로·실측 자원·상태 확인 방법 |
+| Local Harbor Redis Digest | `valkey-server /etc/seokpan/redis/redis.conf` | 승인 Engine/TLS Binary·임의 UID·읽기 전용 RootFS와 필요한 쓰기 경로·실측 자원·상태 확인 방법 |
 
-C의 Recovery 계약에 맞춰 Redis는 `emptyDir`와 `save ""`·`appendonly no`·`maxmemory-policy noeviction`을 사용한다. 세 지시는 Include 뒤에 고정하고 Gate에서 변경·중복을 거부한다. 영속 DB는 Redis가 아닌 `stone_game`의 periodic 백업으로 복원한다. Cloud/Recovery의 DB 이름은 C가 확인한 `stone_game`으로 반영했다. Engine/Image·maxmemory 수치·Resource Requests/Limits·Namespace는 미선정이며, 외부 runtime ConfigMap의 메모리 상한과 컨테이너 limit를 짝지어 검토한 뒤 활성화한다. 현재 replicas0과 INPUT_REQUIRED 실행 차단을 유지한다.
+C의 Recovery 계약에 맞춰 Redis는 `emptyDir`와 `save ""`·`appendonly no`·`maxmemory-policy noeviction`을 사용한다. 세 지시는 Include 뒤에 고정하고 Gate에서 변경·중복을 거부한다. 영속 DB는 Redis가 아닌 `stone_game`의 periodic 백업으로 복원한다. Cloud/Recovery의 DB 이름은 C가 확인한 `stone_game`으로 반영했다. Namespace `seokpan-recovery`, Engine Valkey 7.2.14, 고정 `maxmemory 384mb`와 Runtime requests/limits 512Mi를 채택했다. FE requests/limits 32/64Mi, BE 128/256Mi는 Recovery 전용 patch로 공급한다. 실제 Engine Image Digest·외부 AUTH/CA/runtime 자료·노드 여유·RSS/Peak/TLS/AUTH는 미검증이다. 현재 replicas0과 INPUT_REQUIRED 실행 차단을 유지한다.
 
 Runtime/보호 AUTH Include를 먼저 읽고 공개 TLS 설정을 뒤에 두어 그 Include가 평문 Port/TLS 설정을 덮어쓰지 못하게 한다. Renderer는 Redis와 같이 Directive 이름의 대소문자를 구분하지 않으며 공개 파일에 허용한 Transport/Process 설정의 추가 중복·AUTH·외부 복제 지시를 거부한다. C는 외부 Include 내용에도 인증·복제·쓰기 정책의 모순이 없는지 검토한다. Secret 파일 Mount는 읽기 전용이며 고정 UID/GID·`fsGroup`을 지정하지 않았다. 실제 SCC·임의 UID에서 Key/설정 읽기 권한과 `/data` 쓰기 권한이 맞는지는 C/A/D의 실행 검증이다. Secret를 읽을 수 있다는 선언이 실제 파일 권한 검증은 아니다.
 
@@ -116,3 +116,25 @@ Cloud 선언 후보는 [cloud](overlays/cloud/README.md)에 별도 후속 변경
 첫 OCP 인계의 Project/Application·Owner·입력·Migration/삭제 보호와 실제 시험 순서는 [lab 제어 선언](../clusters/ocp-lab/README.md)·[인계 묶음](../handoff/OCP_FIRST_DEPLOYMENT.md)을 따른다. App Overlay 자체는 Namespace/Secret/Job을 소유하지 않으며 기존 0 Replica/미확정 입력을 유지한다.
 
 Recovery Bundle 파일 대조는 [별도 인벤토리 검사](../handoff/recovery/README.md)를 사용한다. 파일 해시/Manifest 비교 PASS와 실제 복원·독립 사본·RTO/RPO 수락을 구분한다.
+
+## 2026-10-13 채택한 Recovery 초기 계약
+
+B(정태훈/tjung03)가 대상 `seokpan-recovery`, Valkey 7.2.14와 초기 자원안을 채택했다. Source 계약을 선택한 것으로 실제 Namespace 생성, Image 공급/실행, 연결 성공을 뜻하지 않는다.
+
+| 구성 | CPU requests/limits | 메모리 requests/limits |
+|---|---|---|
+| FE | 25m/250m | 32Mi/64Mi |
+| BE | 100m/500m | 128Mi/256Mi |
+| Valkey | 100m/500m | 512Mi/512Mi |
+
+Valkey의 `maxmemory 384mb`, `dir /data`, 비영속/noeviction 설정은 두 외부 Include 뒤에 고정하며 Gate가 변경·중복을 거부한다. 외부 runtime Include는 여전히 C가 공급한다. maxmemory는 전체 RSS 제한이 아니며 임의 UID의 /data 쓰기·TLS/AUTH·실제 peak/OOM 시험이 필요하다. Engine 이미지 Placeholder, 외부 Secret/CA와 replicas 0 보류는 유지한다. 이미지 태그/보고만으로 7.2.14 binary 실행을 인정하지 않는다.
+
+Image 공급 담당 D는 실제 Valkey 7.2.14 고정 Digest/플랫폼과 `valkey-server` 실행 파일을 확인한다. 현재 Probe는 TCP listener만 확인하고 CLI를 실행하지 않는다. 후속 AUTH 진단은 `valkey-cli --tls`와 Secret으로 공급한 `VALKEYCLI_AUTH`를 사용하며, 호환 `REDISCLI_AUTH`만으로 인증된다고 가정하지 않는다. 비밀번호를 명령 인수에 넣지 않는다. 공급된 이미지에서 실제 TLS/SNI/CA/AUTH PING을 확인하기 전에는 readiness/업무 성공으로 수락하지 않는다.
+
+정상 메모리 예약은 672Mi, limits 합계는 832Mi다. FE 이전 Pod 완전 종료 뒤 BE 한 개만 rolling 교체하면 추가 BE와 512Mi 여유를 포함한 예약은 1312Mi, limits envelope는 1600Mi다. FE 종료 중 Pod가 겹치면 1344/1664Mi이므로 이전 FE 완전 종료를 먼저 확인한다. 이는 초기 예산이며 실제 Node 수용/성능 PASS가 아니다. 격리는 Namespace 이름만으로 증명되지 않고 실제 Context/RBAC/CNI·통신 경계를 확인해야 한다.
+
+담당 경계: B는 Overlay/소비 검사와 App 업무 검증, A는 기반/네트워크 인계, C는 DB 복원·AUTH/CA·외부 runtime 입력/도구, D는 Image/Registry·시험 및 Evidence 조율을 맡는다. 완료한 Run7 FE/BE 공급·Pull을 반복 요청하지 않는다.
+
+최종 Cloud 이관은 Recovery 복원과 별개다. Foundation Apply 뒤에는 C의 중지 전 준비를 진행한다. ROSA Ready와 App 배포 입력 준비 뒤 B가 원본 전체 Writer를 중지하고, C의 최종 dump/import/비교(6)와 계정/거부 시험(7/8), B의 Migration current/Backend 기동·업무 검증(9)까지 중지를 유지한다. 단계6 비교만으로 원본 쓰기를 재개하지 않는다. Cloud 업무 시험 쓰기도 새 쓰기로 취급하며 발생 뒤에는 원본 단순 재개를 복귀로 인정하지 않는다. C는 본인 Infra #44 절차의 끝점을 이 기준에 맞춰 정합화한다.
+
+초기 공동 시간 예산은 준비30분(쓰기 중지 밖), 중지75분과 종료 여유15분을 합한 120분이다. 실측/날짜 확정이 아니며 ROSA 설치 시간과 실패 시 실제 복귀 시간은 별도다. 보호 조건(Runtime 2000ms 포함)을 완화하지 않는다.
