@@ -11,6 +11,7 @@ on:
       - 'operations/**'
       - 'handoff/**'
       - 'tools/**'
+      - 'releases/**'
       - 'Makefile'
       - '.github/workflows/gitops-static-validation.yml'
   push:
@@ -23,6 +24,7 @@ on:
       - 'operations/**'
       - 'handoff/**'
       - 'tools/**'
+      - 'releases/**'
       - 'Makefile'
       - '.github/workflows/gitops-static-validation.yml'
 
@@ -134,6 +136,30 @@ jobs:
           if int(counts[0]) < suite["minimum"] or re.search(r"(?m)^OK$", log) is None:
               raise SystemExit("Source tests did not pass without skips or expected failures")
           print("Executed source tests:", counts[0])
+          PY
+
+      - name: Check declared Release JSON records without promotion
+        run: |
+          set -euo pipefail
+          "$GITOPS_TEST_PYTHON" - <<'PY'
+          import pathlib, sys
+          sys.path.insert(0, "tools")
+          from validate_release_record import load_record, validate
+          directory = pathlib.Path("releases")
+          if directory.is_symlink():
+              raise SystemExit("Release directory must be a regular source directory")
+          records = sorted(directory.rglob("*.json")) if directory.is_dir() else []
+          for path in records:
+              if path.is_symlink() or not path.is_file() or path.stat().st_size > 262144:
+                  raise SystemExit("Release record is not a bounded regular source file")
+              try:
+                  document = load_record(path.read_bytes())
+              except (ValueError, OSError):
+                  raise SystemExit("Release record JSON cannot be read; no raw input output")
+              errors = validate(document)
+              if errors:
+                  raise SystemExit("Release record format failed: " + ", ".join(errors))
+          print("Declared records checked:", len(records), "(no Runtime or promotion claim)")
           PY
 
       - name: Preserve diagnostic OCP Source renders
