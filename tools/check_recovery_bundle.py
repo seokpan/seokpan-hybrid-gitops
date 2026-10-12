@@ -112,13 +112,22 @@ def protected_input_format(path):
     metadata = document["sops"]
     if not isinstance(metadata, dict) or not encrypted_value(metadata.get("mac")):
         raise Invalid("SOPS_METADATA")
+    allowed_metadata = {"age", "mac", "version", "lastmodified", "unencrypted_suffix",
+                        "kms", "gcp_kms", "azure_kv", "hc_vault", "pgp"}
+    if set(metadata) - allowed_metadata or any(metadata.get(key, []) != [] for key in
+            ("kms", "gcp_kms", "azure_kv", "hc_vault", "pgp")):
+        raise Invalid("SOPS_UNSUPPORTED_METADATA")
+    if "unencrypted_suffix" in metadata and metadata["unencrypted_suffix"] != "_unencrypted":
+        raise Invalid("SOPS_UNSUPPORTED_METADATA")
+    if "lastmodified" in metadata and not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|\+00:00)", str(metadata["lastmodified"])):
+        raise Invalid("SOPS_METADATA")
     if not isinstance(metadata.get("version"), str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", metadata["version"]):
         raise Invalid("SOPS_METADATA")
     recipients = metadata.get("age")
     if not isinstance(recipients, list) or not recipients or len(recipients) > 32:
         raise Invalid("SOPS_AGE_METADATA")
     for row in recipients:
-        if not isinstance(row, dict) or not isinstance(row.get("recipient"), str) or not re.fullmatch(r"age1[0-9a-z]+", row["recipient"]):
+        if not isinstance(row, dict) or set(row) != {"recipient", "enc"} or not isinstance(row.get("recipient"), str) or not re.fullmatch(r"age1[0-9a-z]+", row["recipient"]):
             raise Invalid("SOPS_AGE_METADATA")
         envelope = row.get("enc")
         if not isinstance(envelope, str) or not envelope.startswith("-----BEGIN AGE ENCRYPTED FILE-----\n") or not envelope.rstrip().endswith("-----END AGE ENCRYPTED FILE-----"):

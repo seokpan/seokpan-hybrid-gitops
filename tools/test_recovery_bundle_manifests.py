@@ -194,6 +194,9 @@ class RecoveryBundleTests(unittest.TestCase):
 
     def test_sops_metadata_and_bad_ciphertext_rejected(self):
         mutations=[lambda d:d["sops"].update(mac="plaintext"),lambda d:d["sops"].update(age=[]),
+                   lambda d:d["sops"].update(password="sentinel-password"),
+                   lambda d:d["sops"]["age"][0].update(password="sentinel-password"),
+                   lambda d:d["sops"].update(lastmodified="sentinel-password"),
                    lambda d:d["sops"].update(version="latest"),
                    lambda d:d["sops"]["age"][0].update(enc="plaintext"),
                    lambda d:d["credentials"].update(password="ENC[AES256_GCM,data:!,iv:YWJj,tag:YWJj,type:str]")]
