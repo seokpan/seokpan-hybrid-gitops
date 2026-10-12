@@ -493,6 +493,15 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
         # Source selects transient emptyDir. The generic gate still accepts an
         # explicitly reviewed alternative; neither proves UID write permission.
 
+    def test_recovery_data_volume_cannot_mount_host_storage(self):
+        resources = self.fixture()
+        redis = self.resource(resources, "StatefulSet", "recovery-redis")
+        volume = self.volume(redis, "runtime-data")
+        volume.pop("emptyDir")
+        volume["hostPath"] = {"path": "/shared/first-project", "type": "Directory"}
+        self.assertIn("Recovery Redis needs a reviewed isolated data volume interface",
+                      self.blockers(resources))
+
     def test_recovery_transient_policy_cannot_enable_persistence_or_eviction(self):
         for old,new in [('save ""','save 60 1'),('appendonly no','appendonly yes'),
                         ('maxmemory-policy noeviction','maxmemory-policy allkeys-lru')]:

@@ -265,9 +265,11 @@ def recovery_manifest_blockers(rendered, namespace, registry):
                     (auth_include in directives and directives.index(entries[0]) < directives.index(auth_include)) or \
                     (runtime_include in directives and directives.index(entries[0]) < directives.index(runtime_include)):
                 blockers.append("Recovery Redis fixed TLS-only settings must follow owner includes")
+        # Do not allow host storage to bypass the isolated volume boundary.
         # Do not require a particular final storage technology. Actual freshness,
         # permissions, data contents and persistence are C/A review/runtime gates.
         if "runtime-data" not in volumes or len(volumes["runtime-data"]) != 2 or \
+                "hostPath" in volumes["runtime-data"] or \
                 mounts.get("runtime-data", {}).get("mountPath") != "/data" or \
                 mounts["runtime-data"].get("readOnly", False):
             blockers.append("Recovery Redis needs a reviewed isolated data volume interface")
