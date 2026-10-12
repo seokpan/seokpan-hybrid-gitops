@@ -6,6 +6,7 @@ record remains incomplete; PASS references are declarations, not inspected proof
 import argparse
 import datetime as dt
 import json
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -24,7 +25,42 @@ def load_record(raw):
                 raise ValueError("duplicate JSON field")
             result[key] = value
         return result
-    return json.loads(raw, object_pairs_hook=unique)
+    try:
+        return json.loads(raw, object_pairs_hook=unique)
+    except RecursionError:
+        raise ValueError("record nesting limit") from None
+
+def check_records(directory):
+    """Check candidate/run declarations; reject every symlink under releases."""
+    directory = Path(directory)
+    if directory.is_symlink():
+        raise ValueError("Release directory must be a regular source directory")
+    if not directory.exists():
+        return 0
+    if not directory.is_dir():
+        raise ValueError("Release directory must be a regular source directory")
+    records = []
+    def failed_walk(error):
+        raise ValueError("Release directory cannot be read; no raw input output")
+    for parent, directories, filenames in os.walk(directory, followlinks=False, onerror=failed_walk):
+        for name in directories + filenames:
+            if (Path(parent) / name).is_symlink():
+                raise ValueError("Release source tree must not contain symlinks")
+        for name in filenames:
+            path = Path(parent) / name
+            if path.suffix != '.json':
+                continue
+            if not path.is_file() or path.stat().st_size > 262144:
+                raise ValueError("Release record is not a bounded regular source file")
+            records.append(path)
+    for path in sorted(records):
+        try:
+            errors = validate(load_record(path.read_bytes()))
+        except (ValueError, OSError, RecursionError):
+            raise ValueError("Release record JSON cannot be read; no raw input output") from None
+        if errors:
+            raise ValueError("Release record format failed: " + ", ".join(errors))
+    return len(records)
 
 def validate(document, environment=None):
     errors=[]
@@ -140,7 +176,7 @@ def main():
         if len(raw)>262144: raise ValueError('record size limit')
         document=load_record(raw)
         errors=validate(document,args.environment)
-    except (OSError,ValueError):
+    except (OSError,ValueError,RecursionError):
         print('INVALID_RECORD; no raw input/error output');return 2
     print(json.dumps({'format_valid':not errors,'completeness':document.get('completeness') if isinstance(document,dict) else None,
         'errors':errors,'scope':'DECLARATIONS_ONLY_NOT_RUNTIME_OR_EVIDENCE_INSPECTION'}))

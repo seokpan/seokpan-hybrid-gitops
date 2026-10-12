@@ -1,8 +1,11 @@
 import copy
 import json
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 import unittest
-from validate_release_record import load_record, validate
+from validate_release_record import check_records, load_record, validate
 
 ROOT=Path(__file__).resolve().parent.parent
 class RecordBoundaries(unittest.TestCase):
@@ -63,6 +66,55 @@ class RecordBoundaries(unittest.TestCase):
         value['source']={'app_sha':'a'*40,'infra_sha':'b'*40}
         for image in value['images'].values():image.update(harbor_digest='sha256:'+'c'*64,platform='linux/amd64')
         value['revisions'].update(schema='schema-ref',config='config-ref',secret='secret-ref',tool_manifest='tool-ref')
+        self.assertEqual(validate(value,'lab'),[])
+
+    def test_empty_and_nested_record_inventory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory=Path(temp)/'releases'
+            self.assertEqual(check_records(directory),0)
+            directory.mkdir();self.assertEqual(check_records(directory),0)
+            nested=directory/'nested';nested.mkdir()
+            (nested/'record.json').write_text(json.dumps(self.template()),encoding='utf-8')
+            self.assertEqual(check_records(directory),1)
+
+    def test_release_source_directory_and_file_symlinks_rejected(self):
+        if sys.platform == 'win32':
+            self.skipTest('Real symlink regression executes on Linux CI')
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);directory=root/'releases';directory.mkdir()
+            outside=root/'outside';outside.mkdir()
+            (outside/'bad.json').write_text('{}',encoding='utf-8')
+            for link in (directory/'linked', directory/'nested'/'linked'):
+                link.parent.mkdir(exist_ok=True)
+                link.symlink_to(outside,target_is_directory=True)
+                with self.assertRaisesRegex(ValueError,'symlink'):
+                    check_records(directory)
+                link.unlink()
+            file_link=directory/'record.json'
+            file_link.symlink_to(outside/'bad.json')
+            with self.assertRaisesRegex(ValueError,'symlink'):
+                check_records(directory)
+
+    def test_deep_json_cli_does_not_print_traceback_or_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'deep.json'
+            raw=b'['*9000+b'0'+b']'*9000
+            path.write_bytes(raw)
+            result=subprocess.run([sys.executable,str(ROOT/'tools/validate_release_record.py'),str(path)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,2)
+            self.assertEqual(result.stdout.strip(),'INVALID_RECORD; no raw input/error output')
+            self.assertEqual(result.stderr,'')
+            with self.assertRaisesRegex(ValueError,'nesting'):
+                load_record(raw)
+
+    def test_complete_explicit_scope_exclusion_is_not_image_presence(self):
+        value=self.candidate();value.update(completeness='COMPLETE',release_id='scoped-fixture',missing_inputs=[])
+        value['source']={'app_sha':'a'*40,'infra_sha':'b'*40}
+        for image in value['images'].values():image.update(harbor_digest='sha256:'+'c'*64,platform='linux/amd64')
+        value['revisions'].update(schema='schema-ref',config='config-ref',secret='secret-ref',tool_manifest='tool-ref')
+        value['images']['frontend']['harbor_digest']=None
+        self.assertTrue(validate(value,'lab'))
+        value['out_of_scope']={'images.frontend.harbor_digest':'No frontend image in this declared scope; not deployable'}
         self.assertEqual(validate(value,'lab'),[])
 
 if __name__=='__main__':unittest.main()

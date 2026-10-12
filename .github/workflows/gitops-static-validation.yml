@@ -142,24 +142,14 @@ jobs:
         run: |
           set -euo pipefail
           "$GITOPS_TEST_PYTHON" - <<'PY'
-          import pathlib, sys
+          import sys
           sys.path.insert(0, "tools")
-          from validate_release_record import load_record, validate
-          directory = pathlib.Path("releases")
-          if directory.is_symlink():
-              raise SystemExit("Release directory must be a regular source directory")
-          records = sorted(directory.rglob("*.json")) if directory.is_dir() else []
-          for path in records:
-              if path.is_symlink() or not path.is_file() or path.stat().st_size > 262144:
-                  raise SystemExit("Release record is not a bounded regular source file")
-              try:
-                  document = load_record(path.read_bytes())
-              except (ValueError, OSError):
-                  raise SystemExit("Release record JSON cannot be read; no raw input output")
-              errors = validate(document)
-              if errors:
-                  raise SystemExit("Release record format failed: " + ", ".join(errors))
-          print("Declared records checked:", len(records), "(no Runtime or promotion claim)")
+          from validate_release_record import check_records
+          try:
+              count = check_records("releases")
+          except (ValueError, OSError, RecursionError) as error:
+              raise SystemExit(str(error) if isinstance(error, ValueError) else "Release records cannot be read; no raw input output")
+          print("Declared candidate/run records checked:", count, "(no Runtime or promotion claim)")
           PY
 
       - name: Preserve diagnostic OCP Source renders
