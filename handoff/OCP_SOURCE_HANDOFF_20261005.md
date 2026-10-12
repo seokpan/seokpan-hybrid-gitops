@@ -3,7 +3,11 @@
 **목적:** 병합된 App와 GitOps 선언을 D의 실제 OCP 배포와 C의 Data 검토에 연결한다. 이 카드는 Source 제출·입력 수신·실제 실행을 따로 표시한다. 상세 절차는 [OCP 최초 배포 안내](OCP_FIRST_DEPLOYMENT.md), B 원본은 [GitOps #10](https://github.com/seokpan/seokpan-hybrid-gitops/issues/10), 개인 상위는 [Docs #21](https://github.com/seokpan/seokpan-hybrid-docs/issues/21)이다.
 
 <a id="현재-후속--2026-10-06-registry-경로-미확보"></a>
-> **현재 인계 기준: 2026-10-07.** GitOps #17은 `fa3cea313e2cb1533d9703082619b085a3de25cc`에 병합됐다. 아래 Source·공급 보고와 실제 배포/업무 수락은 서로 다른 상태다.
+> **인계 기록 기준: 2026-10-07.** GitOps #17은 `fa3cea313e2cb1533d9703082619b085a3de25cc`에 병합됐다. 아래 Source·공급 보고와 실제 배포/업무 수락은 서로 다른 상태다.
+
+> **기록 범위:** 아래 인계 상태·Digest·Replica 수·시험 결과는 **2026-10-07 기준 기록**이다. 본문의 “현재”도 그 시점을 뜻하며, 이후 Source 개정이나 실행 중 Workload의 현황을 대신하지 않는다. 이전 공급·검사 기록은 재현 근거로 보존한다.
+>
+> **실행 전 확인:** 사용할 검토된 전체 GitOps SHA에서 [lab 선언](../apps/overlays/lab/kustomization.yaml)과 [별도 Migration Job](../operations/ocp-lab/migration/job.yaml)을 대조한다. 이후 공급은 [Image 공급 #32](https://github.com/seokpan/seokpan-hybrid-gitops/issues/32), Run #5 Image 참조 후보와 검토 상태는 [PR #37](https://github.com/seokpan/seokpan-hybrid-gitops/pull/37)을 따른다. Source 병합·승인과 실제 교체·Migration 실행 승인은 구분한다.
 
 | 항목 | 이미 반영된 Source·수신 보고 | 남은 직접 조건 |
 |---|---|---|
@@ -107,7 +111,7 @@ Kustomize는 기존 검사와 같은 v5.7.1을 쓴다. GitOps #12에서 추가�
 
 artifact 보존은 **7일**이며 Source/인계 검토용이다. GitHub artifact 다운로드에 로그인이 필요할 수 있으므로 D/C가 받을 보존 위치와 읽은 개정을 별도로 기록한다. 보호된 Secret/CA 값·Runtime Run/Index·DB Backup/Recovery Release 보존 정책과 별개다. 만료 뒤에는 수락한 정확 SHA에서 재생성할 수 있다. 실제 PR CI 결과·artifact 다운로드 대조·D/C의 읽은 개정과 수신 여부를 #10에 기록한다. 2026-10-05 최초 인계 당시에는 Native Kustomize 부재와 다운로드 timeout 때문에 로컬 Render를 실행하지 않았다. 이번 Image 입력 개정은 공식 Kustomize v5.7.1 Archive SHA256을 기존 Workflow 값과 대조하고 Python3.12/PyYAML6.0.2에서 기존 **39개 검사 PASS·실제 9개 진단 Render(위 OCP8 + Recovery1)**와 Hash를 확인했다. Lab/Recovery Release와 Migration 입력 검사는 남은 입력/기동 보류 때문에 exit2를 유지하고 실행 출력 파일을 만들지 않는다. 로컬 기준은 고정 main `6ea2d9a90ab7c58803767220abf956d3c1b54a5f` + 검토된 변경 Blob이며 최종 PR HEAD/Native CI artifact는 별도로 연결한다.
 
-현재 lab Source의 예는 아래와 같다. Recovery Harbor 원본/경로와 구분한다.
+**2026-10-07 기록 기준의 lab Source 예**는 아래와 같다. 이후 실행 대상은 위의 전체 SHA·lab 선언 확인 절차로 대조하며, Recovery Harbor 원본/경로와 구분한다.
 
 ```yaml
 # apps/overlays/lab/kustomization.yaml

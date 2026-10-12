@@ -76,11 +76,11 @@ class AppManifestBoundaries(unittest.TestCase):
                             "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9",
                         }
                         if env == "lab":
-                            # Run5 supply accepted in GitOps #32; node Pull/runtime
-                            # remain separate. Recovery keeps its prior supply.
+                            # Run7 Harbor candidates reported by D; internal supply/Pull
+                            # and runtime remain unverified. Recovery keeps prior supply.
                             approved = {
-                                "backend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend@sha256:ab0e141abbdf43c5589f9b0af7df38f168044541deec1e10ec7295cb394f4290",
-                                "frontend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/frontend@sha256:d26d5385a02ed557863abcba9b3e3cde1fac3ceaf2671f170cdc081729620ac4",
+                                "backend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend@sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f",
+                                "frontend": "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/frontend@sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee",
                             }
                         self.assertEqual(container["image"], approved[dep["metadata"]["name"]])
                     elif env == "lab" and dep["kind"] == "StatefulSet":

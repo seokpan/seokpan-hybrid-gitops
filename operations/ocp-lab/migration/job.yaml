@@ -23,7 +23,7 @@ spec:
         app.kubernetes.io/name: seokpan-migration
     spec:
       restartPolicy: Never
-      # Same internal Registry/digest as lab App; default-SA Pull was reported by D.
+      # Run7 candidate matches lab App; new internal supply/Pull is unverified.
       automountServiceAccountToken: false
       enableServiceLinks: false
       securityContext:
@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: migration
-        image: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend@sha256:ab0e141abbdf43c5589f9b0af7df38f168044541deec1e10ec7295cb394f4290
+        image: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend@sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f
         imagePullPolicy: IfNotPresent
         # 작성자: 정태훈 / 작성 날짜: 2026/10/06
         # Unmeasured first-lab candidate; remains suspended/read-only current.
