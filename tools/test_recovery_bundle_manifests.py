@@ -9,7 +9,7 @@ import tempfile
 import unittest
 import yaml
 import test_app_manifests
-from check_recovery_bundle import REFS, Invalid, check
+from check_recovery_bundle import DATABASE_RESTORE, REFS, Invalid, check
 ROOT=Path(__file__).resolve().parents[1]
 class RecoveryBundleTests(unittest.TestCase):
     def bundle(self,root):
@@ -158,6 +158,92 @@ class RecoveryBundleTests(unittest.TestCase):
     def test_cli_failure_does_not_expose_inputs(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);c=self.bundle(root);c["secret_references"]["do-not-expose"]=["sentinel-password"];self.save(root,c)
+            r=subprocess.run([sys.executable,str(ROOT/"tools/check_recovery_bundle.py"),str(root)],capture_output=True,text=True)
+            self.assertEqual(r.returncode,2)
+            self.assertNotIn("sentinel",r.stdout+r.stderr)
+            self.assertNotIn(str(root),r.stdout+r.stderr)
+
+    @staticmethod
+    def sops_fixture():
+        # Format-only synthetic ciphertext; never a decryption/MAC proof.
+        value = "ENC[AES256_GCM,data:YWJj,iv:YWJj,tag:YWJj,type:str]"
+        return {"credentials": {"password": value}, "sops": {
+            "age": [{"recipient": "age1fixture", "enc":
+                "-----BEGIN AGE ENCRYPTED FILE-----\nfixture\n-----END AGE ENCRYPTED FILE-----\n"}],
+            "mac": value, "version": "3.9.0"}}
+
+    def replace_protected(self, root, inventory, data):
+        (root/"protected_inputs.fixture").write_bytes(data)
+        self.rehash(root, inventory, "protected_inputs")
+
+    def test_sops_age_yaml_accepted_without_claiming_decryption(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); c=self.bundle(root)
+            self.replace_protected(root,c,yaml.safe_dump(self.sops_fixture()).encode())
+            result=check(root)
+            self.assertEqual(result["protected_inputs_format"],"SOPS_AGE_ENCRYPTED_VALUES_STRUCTURE_ONLY")
+            self.assertEqual(result["runtime_restore_independent_copy_identity_rto_rpo"],"NOT_VERIFIED")
+
+    def test_sops_plaintext_nested_values_and_partial_encryption_rejected(self):
+        for value in ("sentinel-password", True, 12, None, {"nested": "sentinel-password"}, ["sentinel-password"], {}):
+            with self.subTest(value_type=type(value).__name__),tempfile.TemporaryDirectory() as td:
+                root=Path(td); c=self.bundle(root); payload=self.sops_fixture()
+                payload["credentials"]["extra"]=value
+                self.replace_protected(root,c,yaml.safe_dump(payload).encode())
+                with self.assertRaises(Invalid): check(root)
+
+    def test_sops_metadata_and_bad_ciphertext_rejected(self):
+        mutations=[lambda d:d["sops"].update(mac="plaintext"),lambda d:d["sops"].update(age=[]),
+                   lambda d:d["sops"].update(version="latest"),
+                   lambda d:d["sops"]["age"][0].update(enc="plaintext"),
+                   lambda d:d["credentials"].update(password="ENC[AES256_GCM,data:!,iv:YWJj,tag:YWJj,type:str]")]
+        for mutate in mutations:
+            with tempfile.TemporaryDirectory() as td:
+                root=Path(td); c=self.bundle(root); payload=self.sops_fixture(); mutate(payload)
+                self.replace_protected(root,c,yaml.safe_dump(payload).encode())
+                with self.assertRaises(Invalid): check(root)
+
+    def test_sops_duplicate_keys_aliases_and_oversize_rejected(self):
+        fixture=yaml.safe_dump(self.sops_fixture()).encode()
+        for data in (b"password: first\npassword: second\n"+fixture,
+                     b"value: &shared encrypted\nother: *shared\n"+fixture,
+                     b"#"*262145):
+            with tempfile.TemporaryDirectory() as td:
+                root=Path(td); c=self.bundle(root); self.replace_protected(root,c,data)
+                with self.assertRaises(Invalid): check(root)
+
+    def version2(self, root):
+        c=self.bundle(root); c["schema_version"]=2
+        c["database_restore"]=copy.deepcopy(DATABASE_RESTORE)
+        row=next(r for r in c["artifacts"] if r["role"]=="database_dump")
+        (root/row["path"]).unlink(); c["artifacts"].remove(row); self.save(root,c)
+        return c
+
+    def test_v2_external_periodic_contract_needs_no_fixed_dump(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); self.version2(root); result=check(root)
+            self.assertEqual(result["artifact_count"],7)
+            self.assertEqual(result["database_source"],"EXTERNAL_PERIODIC_RESTORE_REQUIRED")
+            self.assertEqual(result["runtime_restore_independent_copy_identity_rto_rpo"],"NOT_VERIFIED")
+
+    def test_v2_cannot_substitute_rehearsal_mtime_database_or_rpo(self):
+        for key,value in (("backup_kind","rehearsal"),("selection","file_mtime"),
+                          ("database","other_db"),("rpo_limit_seconds",3600)):
+            with self.subTest(key=key),tempfile.TemporaryDirectory() as td:
+                root=Path(td); c=self.version2(root); c["database_restore"][key]=value; self.save(root,c)
+                with self.assertRaisesRegex(Invalid,"EXTERNAL_DATABASE_RESTORE_CONTRACT"): check(root)
+
+    def test_v2_fixed_dump_cannot_masquerade_as_current_periodic(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); c=self.bundle(root); c["schema_version"]=2
+            c["database_restore"]=copy.deepcopy(DATABASE_RESTORE); self.save(root,c)
+            with self.assertRaisesRegex(Invalid,"ARTIFACT_ROLES"): check(root)
+
+    def test_sops_cli_error_stays_redacted(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); c=self.bundle(root); payload=self.sops_fixture()
+            payload["credentials"]["password"]="sentinel-password"
+            self.replace_protected(root,c,yaml.safe_dump(payload).encode())
             r=subprocess.run([sys.executable,str(ROOT/"tools/check_recovery_bundle.py"),str(root)],capture_output=True,text=True)
             self.assertEqual(r.returncode,2)
             self.assertNotIn("sentinel",r.stdout+r.stderr)

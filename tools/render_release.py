@@ -248,10 +248,11 @@ def recovery_manifest_blockers(rendered, namespace, registry):
             "tls-ca-cert-file": ["/etc/seokpan/redis-server-tls/ca.crt"],
             "tls-protocols": ["TLSv1.2 TLSv1.3"],
             "daemonize": ["no"], "logfile": [""],
+            "save": [""], "appendonly": ["no"], "maxmemory-policy": ["noeviction"],
         }
         # Keep this public file limited to the declared transport/process
-        # boundary. AUTH, replication and data policies are never added here;
-        # C must review its protected/external includes separately.
+        # boundary and the reviewed transient-state policy. AUTH, replication
+        # and actual memory budgets require separate protected/external review.
         if any(d[0] not in {"include", *fixed} for d in directives):
             blockers.append("Recovery public Redis configuration must contain only reviewed transport directives")
         if directives.count(auth_include) != 1 or directives.count(runtime_include) != 1 or \

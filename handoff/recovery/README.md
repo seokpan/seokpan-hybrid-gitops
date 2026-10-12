@@ -6,11 +6,11 @@
 python3 tools/check_recovery_bundle.py /private/received-bundle
 ```
 
-`inventory.json`의 v1 계약은 `schema_version: 1`, `environment: recovery`, 승인 `namespace`·로컬 Harbor `registry`, 전체40자리 `source_revisions.app/gitops`, `images.backend/frontend/recovery-redis`의 실제 Harbor@sha256 참조, `server_command`, `secret_references`, `artifacts`다. Artifact 각 행은 `role`·Bundle 내부 상대 `path`·전체64자리 `sha256`만 갖는다. 경로 탈출·Symlink/reparse point·중복 JSON/경로·빠진 자료·추적되지 않은 파일·FIFO/socket 등 특수 파일·해시 불일치를 거부한다. 인벤토리/Artifact의 등록 경로는 실제 파일명·하위 폴더명과 대소문자까지 정확히 일치해야 한다. 등록되지 않은 대소문자 변형 파일도 거부하며, 등록 경로끼리 대소문자만 다른 중복은 이식 가능한 공급을 위해 계속 거부한다. 명시적으로 등록한 혼합 대소문자 경로 자체는 허용한다. 실제 입력/오류 원문/파일 내용은 판정 출력에 포함하지 않는다.
+`inventory.json`의 기존 v1 계약은 `schema_version: 1`, `environment: recovery`, 승인 `namespace`·로컬 Harbor `registry`, 전체40자리 `source_revisions.app/gitops`, `images.backend/frontend/recovery-redis`의 실제 Harbor@sha256 참조, `server_command`, `secret_references`, `artifacts`다. Artifact 각 행은 `role`·Bundle 내부 상대 `path`·전체64자리 `sha256`만 갖는다. 경로 탈출·Symlink/reparse point·중복 JSON/경로·빠진 자료·추적되지 않은 파일·FIFO/socket 등 특수 파일·해시 불일치를 거부한다. 인벤토리/Artifact의 등록 경로는 실제 파일명·하위 폴더명과 대소문자까지 정확히 일치해야 한다. 등록되지 않은 대소문자 변형 파일도 거부하며, 등록 경로끼리 대소문자만 다른 중복은 이식 가능한 공급을 위해 계속 거부한다. 명시적으로 등록한 혼합 대소문자 경로 자체는 허용한다. 실제 입력/오류 원문/파일 내용은 판정 출력에 포함하지 않는다.
 
-필수 Artifact role은 `app_manifest`, `image_archive`, `database_dump`, `database_ca`, `redis_ca`, `protected_inputs`, `tool_archive`, `source_archive`다. 단일 Image Archive 내부에는 승인 FE/BE와 Recovery Engine을 포함하고, Dump 묶음에는 승인된 영속 Data 범위를 포함하도록 **별도 공급/내용 검증**한다. 이 검사는 압축파일을 열거나 DB를 읽거나 도구를 실행하지 않으므로 해시가 맞는 빈 의미의 Archive/Dump도 내용 검증 완료로 인정하지 않는다. Archive 내부 OCI index/blob·플랫폼·Source 개정·도구 의존성과 Dump DB/Schema/Data 시점은 공급 Owner 기록과 실제 Import/Restore에서 확인한다.
+기존 v1의 필수 Artifact role은 `app_manifest`, `image_archive`, `database_dump`, `database_ca`, `redis_ca`, `protected_inputs`, `tool_archive`, `source_archive`다. 단일 Image Archive 내부에는 승인 FE/BE와 Recovery Engine을 포함하고, Dump 묶음에는 승인된 영속 Data 범위를 포함하도록 **별도 공급/내용 검증**한다. 이 검사는 압축파일을 열거나 DB를 읽거나 도구를 실행하지 않으므로 해시가 맞는 빈 의미의 Archive/Dump도 내용 검증 완료로 인정하지 않는다. Archive 내부 OCI index/blob·플랫폼·Source 개정·도구 의존성과 Dump DB/Schema/Data 시점은 공급 Owner 기록과 실제 Import/Restore에서 확인한다.
 
-`secret_references`의 정확한 논리 이름/Key는 도구의 `REFS`와 공통 App/Migration 계약을 따른다. 값은 넣지 않는다. 보호 입력 Artifact는 현재 프로젝트 age 공급 형식의 헤더를 요구한다. 헤더 뒤 평문이나 손상된 데이터가 있어도 이 표식 검사만으로는 구분하지 못하므로, **PASS는 실제 암호화됨·정상 age 파일임을 증명하지 않는다**. 공급 Owner의 별도 암호화/복호화 확인이 필요하며 **복호화 가능 여부·Secret 개정·키 보유·대상 Identity는 판정하지 않는다**. CA는 공개 PEM 표식과 Private Key 부재만 검사하고 X.509 체인·수명·DNS/SAN 신뢰는 실제 TLS 시험에서 판정한다. Secret 공급은 App Manifest와 분리하며 두 CA Artifact의 실제 ConfigMap 공급 내용 동일성은 별도 수락한다.
+`secret_references`의 정확한 논리 이름/Key는 도구의 `REFS`와 공통 App/Migration 계약을 따른다. 값은 넣지 않는다. 보호 입력은 raw age 헤더 또는 프로젝트의 SOPS+age YAML 구조를 허용한다. SOPS는 중복 Key·Alias를 거부하고, `sops.age` 수신자/age envelope·암호문 MAC·버전과 모든 비메타데이터 Leaf의 `ENC[AES256_GCM,...]` 구조를 확인한다. 일부 값만 암호화되고 나머지가 평문이면 거부한다. 입력은 최대256KiB·깊이32로 제한한다. 이 검사는 형식만 확인하며 실제 암호화·MAC 무결성·복호화 가능·키 보유·Identity를 증명하지 않는다. 합성 시험의 암호문도 실제 복호화 자료가 아니다. 실제 공급 때 C의 SOPS 복호화/MAC 확인과 보호 개정 수락이 별도로 필요하다. [SOPS 공식 형식](https://getsops.io/docs/)을 따른다. CA는 공개 PEM 표식과 Private Key 부재만 검사하고 X.509 체인·수명·DNS/SAN 신뢰는 실제 TLS 시험에서 판정한다. Secret 공급은 App Manifest와 분리하며 두 CA Artifact의 실제 ConfigMap 공급 내용 동일성은 별도 수락한다.
 
 Recovery 서버 명령은 현행 Source/Gate의 `redis-server`와 맞아야 한다. 이 계약은 특정 Image의 binary 존재나 Engine 채택을 승인하지 않는다. C/D가 승인한 Image가 다른 binary를 요구하면 Recovery Source와 기존 Gate 및 이 인벤토리 계약/시험을 같은 리뷰에서 개정한다. lab의 Valkey 명령·저장소·CA를 그대로 가져오지 않는다. TCP Probe 성공은 TLS/AUTH 성공을 대신하지 않는다.
 
@@ -19,3 +19,22 @@ Recovery 서버 명령은 현행 Source/Gate의 `redis-server`와 맞아야 한�
 **검사 중에는 Bundle을 변경하지 않는다.** 생산자·동기화·복사 작업을 마치고 사본을 고정한 뒤 검사한다. 검사 도중이나 이후 파일·인벤토리를 바꾸면 해당 결과를 재사용하지 않고 고정한 새 사본을 다시 검사한다. 이 도구는 동시 변경 방지나 검사 후 무결성을 보장하지 않는다.
 
 순서: C/A 대상·Namespace·저장소·DB/Engine/CA 입력 수락 → B Source/Release 대조 → D Image/도구와 C Dump/보호 자료 반입 → 이 로컬 검사 → 독립 사본/복원 Identity 확인 → 새 격리 Restore → Migration current → App/WS/새 게임/완료기록 확인 → RTO/RPO 실제 수락. 실제 자료 인계 전에는 기존 Recovery 0 Replica 보류와 INPUT_REQUIRED를 유지한다.
+
+## 최신 periodic DB를 분리하는 v2 계약
+
+새 Bundle은 `schema_version: 2`를 사용한다. v1의 8개 role 중 `database_dump`를 제외한 보호 자산7개와 `database_restore`를 넣는다. 고정 덤프를 최신 DB 사본으로 승계하지 않는다. v1은 이전 사본 대조 호환용으로 유지되며 결과에 `LEGACY_FIXED_DUMP_NOT_CURRENT_RPO_EVIDENCE`를 표시한다.
+
+```json
+"database_restore": {
+  "database": "stone_game",
+  "backup_kind": "periodic",
+  "selection": "backup_id_utc_descending_sha256_valid",
+  "procedure": "seokpan-hybrid-infra#48",
+  "script": "ansible/data/controller/restore.sh",
+  "rpo_limit_seconds": 1800
+}
+```
+
+DB 복원은 [Infra #48](https://github.com/seokpan/seokpan-hybrid-infra/issues/48)의 기존 `restore.sh`로 진행한다. 운영 자동 선택은 `periodic-*`의 Backup ID UTC 데이터 시각 내림차순이며 SHA-256이 맞는 사본을 선택한다. 파일 도착 시각이나 `rehearsal-*`를 운영 기준으로 쓰지 않는다. 이후 age/gunzip/import 종료 코드·Revision·테이블 수·비교를 확인한다. 본 Bundle 검사기는 SSH·DB·복원 스크립트를 실행하지 않는다.
+
+현재 `restore.sh`는 사본의 최대 나이30분을 실행 전에 거부하지 않는다. 따라서 선택된 사본이 최신이라고 RPO30분을 통과한 것은 아니다. 실제 수행자는 선택 Backup ID의 데이터 시각과 T0를 대조하고30분을 넘으면 RPO PASS로 수락하지 않는다. 복호화·가져오기 실패를 자동 재시도로 덮지 않는다. 독립 사본·복원 Identity·실제 RTO/RPO는 계속 `NOT_VERIFIED`다.
