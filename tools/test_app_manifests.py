@@ -305,7 +305,7 @@ class AppManifestBoundaries(unittest.TestCase):
         # Fixed transport is the same non-secret file as the Recovery Source, TLS only.
         config = next(r["data"]["redis.conf"] for r in self.by_kind("lab", "ConfigMap")
                       if r["metadata"]["name"].startswith("lab-redis-config-"))
-        self.assertEqual(config, (ROOT / "apps/overlays/recovery/redis.conf").read_text(
+        self.assertEqual(config, (ROOT / "apps/overlays/lab/redis.conf").read_text(
             encoding="utf-8"))
         self.assertIn("port 0", config.splitlines())
         runtime = next(r["data"]["redis-runtime.conf"] for r in self.by_kind("lab", "ConfigMap")
@@ -324,7 +324,7 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertNotIn("env", container)
         self.assertNotIn("volumeClaimTemplates", redis["spec"])
         volumes = {v["name"]: v for v in pod["volumes"]}
-        self.assertIn("input-required", volumes["runtime-data"]["persistentVolumeClaim"]["claimName"])
+        self.assertEqual(volumes["runtime-data"], {"name": "runtime-data", "emptyDir": {}})
         self.assertIn("input-required", volumes["runtime-config"]["configMap"]["name"])
         for name in ("server-tls", "server-auth"):
             self.assertFalse(volumes[name]["secret"].get("optional", False))
@@ -339,8 +339,10 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertIn("\nport 0\n", config)
         self.assertIn("\ntls-port 6379\n", config)
         self.assertIn("\ntls-auth-clients no\n", config)
-        for directive in ("requirepass ", "aclfile ", "user ", "appendonly ", "maxmemory "):
+        for directive in ("requirepass ", "aclfile ", "user ", "maxmemory "):
             self.assertFalse(any(line.startswith(directive) for line in config.splitlines()))
+        for directive in ('save ""', 'appendonly no', 'maxmemory-policy noeviction'):
+            self.assertIn(directive, config.splitlines())
 
     def test_release_gate_withholds_draft_and_does_not_overwrite_previous_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -460,7 +462,6 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
                 for c in pod["containers"]:
                     c["image"] = f"{self.registry}/{c['name']}@sha256:" + "a" * 64
                 if r["kind"] == "StatefulSet":
-                    self.volume(r, "runtime-data")["persistentVolumeClaim"]["claimName"] = "reviewed-isolated-volume"
                     self.volume(r, "runtime-config")["configMap"]["name"] = "reviewed-redis-runtime"
         return resources
 
@@ -486,11 +487,29 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
         self.assertEqual(self.blockers(resources), [])
         redis = self.resource(resources, "StatefulSet", "recovery-redis")
         volume = self.volume(redis, "runtime-data")
-        volume.pop("persistentVolumeClaim")
-        volume["emptyDir"] = {}
+        volume.pop("emptyDir")
+        volume["persistentVolumeClaim"] = {"claimName": "reviewed-isolated-volume"}
         self.assertEqual(self.blockers(resources), [])
-        # These are Source interfaces; neither variant proves empty data or UID
-        # write permission, and no final persistence policy is selected here.
+        # Source selects transient emptyDir. The generic gate still accepts an
+        # explicitly reviewed alternative; neither proves UID write permission.
+
+    def test_recovery_data_volume_cannot_mount_host_storage(self):
+        resources = self.fixture()
+        redis = self.resource(resources, "StatefulSet", "recovery-redis")
+        volume = self.volume(redis, "runtime-data")
+        volume.pop("emptyDir")
+        volume["hostPath"] = {"path": "/shared/first-project", "type": "Directory"}
+        self.assertIn("Recovery Redis needs a reviewed isolated data volume interface",
+                      self.blockers(resources))
+
+    def test_recovery_transient_policy_cannot_enable_persistence_or_eviction(self):
+        for old,new in [('save ""','save 60 1'),('appendonly no','appendonly yes'),
+                        ('maxmemory-policy noeviction','maxmemory-policy allkeys-lru')]:
+            with self.subTest(directive=old):
+                resources=self.fixture()
+                data=self.resource(resources,"ConfigMap","recovery-redis-config")["data"]
+                data["redis.conf"]=data["redis.conf"].replace(old,new)
+                self.assertTrue(self.blockers(resources))
 
     def test_redis_directive_names_follow_case_insensitive_allowlist_without_overrides(self):
         resources = self.fixture()

@@ -55,11 +55,11 @@ lab 활성화는 승인 FE/BE Image를 Kustomize `images.digest`로 고정하고
 |---|---|---|
 | `recovery-redis-server-tls` Secret | `tls.crt`, `tls.key`, `ca.crt` 읽기 전용 Mount | 새 Service DNS/SAN·수명·Key 보호와 Backend CA의 일치 |
 | `recovery-redis-server-auth` Secret | `redis-auth.conf` 읽기 전용 Include | 비어 있지 않은 `requirepass`, Backend Token과 승인 개정 일치, 무인증/평문 인증 부재 |
-| `recovery-redis-runtime-input-required` 외부 ConfigMap | `redis-runtime.conf` 읽기 전용 Include | 실제 Redis Engine 버전에 맞는 `dir /data`와 쓰기 경로·영속성·메모리 정책. AUTH 값은 이 ConfigMap에 넣지 않음 |
-| `recovery-redis-storage-input-required` 외부 Volume 참조 | `/data` 쓰기 Mount | 새 격리 Runtime용 실제 Volume·빈 초기 상태·임의 UID 쓰기 권한·용량 |
+| `recovery-redis-runtime-input-required` 외부 ConfigMap | `redis-runtime.conf` 읽기 전용 Include | 실제 Engine의 `dir /data`·maxmemory와 Resource limit의 조합. AUTH 값은 넣지 않음. 영속성은 공개 설정에서 비활성화 |
+| Pod 전용 `emptyDir` | `/data` 쓰기 Mount | transient 상태, Pod 교체 시 유실. 실제 임의 UID 쓰기 권한·용량 확인 |
 | Local Harbor Redis Digest | `redis-server /etc/seokpan/redis/redis.conf` | 승인 Engine/TLS Binary·임의 UID·읽기 전용 RootFS와 필요한 쓰기 경로·실측 자원·상태 확인 방법 |
 
-현재 PVC 이름은 **입력 대기 Volume 인터페이스**이며 PVC·StorageClass·영속성 정책 채택이 아니다. Source에 Namespace/Secret/PVC 객체·`volumeClaimTemplates`를 만들지 않는다. C/A가 승인한 다른 새 Volume 방식으로 교체할 수 있고 Renderer는 PVC만 강제하지 않는다. 이름만으로 실제 데이터가 비어 있거나 1차 자산과 격리됐음을 증명하지 않는다. AOF·`maxmemory`·Resource Requests/Limits·Redis 버전·최종 Volume 정책은 선택하지 않았다.
+C의 Recovery 계약에 맞춰 Redis는 `emptyDir`와 `save ""`·`appendonly no`·`maxmemory-policy noeviction`을 사용한다. 세 지시는 Include 뒤에 고정하고 Gate에서 변경·중복을 거부한다. 영속 DB는 Redis가 아닌 `stone_game`의 periodic 백업으로 복원한다. Cloud/Recovery의 DB 이름은 C가 확인한 `stone_game`으로 반영했다. Engine/Image·maxmemory 수치·Resource Requests/Limits·Namespace는 미선정이며, 외부 runtime ConfigMap의 메모리 상한과 컨테이너 limit를 짝지어 검토한 뒤 활성화한다. 현재 replicas0과 INPUT_REQUIRED 실행 차단을 유지한다.
 
 Runtime/보호 AUTH Include를 먼저 읽고 공개 TLS 설정을 뒤에 두어 그 Include가 평문 Port/TLS 설정을 덮어쓰지 못하게 한다. Renderer는 Redis와 같이 Directive 이름의 대소문자를 구분하지 않으며 공개 파일에 허용한 Transport/Process 설정의 추가 중복·AUTH·외부 복제 지시를 거부한다. C는 외부 Include 내용에도 인증·복제·쓰기 정책의 모순이 없는지 검토한다. Secret 파일 Mount는 읽기 전용이며 고정 UID/GID·`fsGroup`을 지정하지 않았다. 실제 SCC·임의 UID에서 Key/설정 읽기 권한과 `/data` 쓰기 권한이 맞는지는 C/A/D의 실행 검증이다. Secret를 읽을 수 있다는 선언이 실제 파일 권한 검증은 아니다.
 
