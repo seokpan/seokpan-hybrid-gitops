@@ -1,5 +1,6 @@
 """Offline inventory/hash and Recovery manifest comparison; no restore or secret decryption."""
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -11,6 +12,15 @@ import yaml
 from render_release import recovery_manifest_blockers
 
 ROLES = {"app_manifest", "image_archive", "database_dump", "database_ca", "redis_ca", "protected_inputs", "tool_archive", "source_archive"}
+# v2 keeps mutable periodic Data outside the immutable asset inventory.
+DATABASE_RESTORE = {
+    "database": "stone_game",
+    "backup_kind": "periodic",
+    "selection": "backup_id_utc_descending_sha256_valid",
+    "procedure": "seokpan-hybrid-infra#48",
+    "script": "ansible/data/controller/restore.sh",
+    "rpo_limit_seconds": 1800,
+}
 REFS = {
     "backend-db-runtime": ["SEOKPAN_IDENTITY_DATABASE_URL", "SEOKPAN_GAME_DATABASE_URL"],
     "backend-db-migration": ["SEOKPAN_MIGRATION_DATABASE_URL"],
@@ -62,6 +72,82 @@ def digest(path):
         for chunk in iter(lambda:stream.read(1024*1024),b""): h.update(chunk)
     return h.hexdigest()
 
+
+def encrypted_value(value):
+    if not isinstance(value, str): return False
+    match = re.fullmatch(r"ENC\[AES256_GCM,data:([A-Za-z0-9+/=]*),iv:([A-Za-z0-9+/=]+),tag:([A-Za-z0-9+/=]+),type:(str|int|float|bool)\]", value)
+    if match is None: return False
+    try:
+        for part in match.group(1, 2, 3): base64.b64decode(part, validate=True)
+    except ValueError: return False
+    return True
+
+
+class ProtectedYamlLoader(yaml.SafeLoader):
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent): raise Invalid("SOPS_ALIAS")
+        return super().compose_node(parent, index)
+
+    def construct_mapping(self, node, deep=False):
+        result = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, str) or key in result: raise Invalid("SOPS_MAPPING_KEY")
+            result[key] = self.construct_object(value_node, deep=deep)
+        return result
+
+
+def protected_input_format(path):
+    # Structural acceptance only: no decryption, MAC verification or key access.
+    with path.open("rb") as stream: header = stream.read(64)
+    if header.startswith((b"age-encryption.org/v1\n", b"-----BEGIN AGE ENCRYPTED FILE-----")):
+        return "AGE_ENVELOPE_MARKER_ONLY"
+    if path.stat().st_size > 262144: raise Invalid("SOPS_SIZE")
+    try:
+        document = yaml.load(path.read_text(encoding="utf-8"), Loader=ProtectedYamlLoader)
+    except (UnicodeError, yaml.YAMLError, RecursionError):
+        raise Invalid("SOPS_DOCUMENT") from None
+    if not isinstance(document, dict) or "sops" not in document or len(document) < 2:
+        raise Invalid("SOPS_DOCUMENT")
+    metadata = document["sops"]
+    if not isinstance(metadata, dict) or not encrypted_value(metadata.get("mac")):
+        raise Invalid("SOPS_METADATA")
+    allowed_metadata = {"age", "mac", "version", "lastmodified", "unencrypted_suffix",
+                        "kms", "gcp_kms", "azure_kv", "hc_vault", "pgp"}
+    if set(metadata) - allowed_metadata or any(metadata.get(key, []) != [] for key in
+            ("kms", "gcp_kms", "azure_kv", "hc_vault", "pgp")):
+        raise Invalid("SOPS_UNSUPPORTED_METADATA")
+    if "unencrypted_suffix" in metadata and metadata["unencrypted_suffix"] != "_unencrypted":
+        raise Invalid("SOPS_UNSUPPORTED_METADATA")
+    if "lastmodified" in metadata and not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|\+00:00)", str(metadata["lastmodified"])):
+        raise Invalid("SOPS_METADATA")
+    if not isinstance(metadata.get("version"), str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", metadata["version"]):
+        raise Invalid("SOPS_METADATA")
+    recipients = metadata.get("age")
+    if not isinstance(recipients, list) or not recipients or len(recipients) > 32:
+        raise Invalid("SOPS_AGE_METADATA")
+    for row in recipients:
+        if not isinstance(row, dict) or set(row) != {"recipient", "enc"} or not isinstance(row.get("recipient"), str) or not re.fullmatch(r"age1[0-9a-z]+", row["recipient"]):
+            raise Invalid("SOPS_AGE_METADATA")
+        envelope = row.get("enc")
+        if not isinstance(envelope, str) or not envelope.startswith("-----BEGIN AGE ENCRYPTED FILE-----\n") or not envelope.rstrip().endswith("-----END AGE ENCRYPTED FILE-----"):
+            raise Invalid("SOPS_AGE_METADATA")
+    count = 0
+    def visit(value, depth=0):
+        nonlocal count
+        count += 1
+        if depth > 32 or count > 10000: raise Invalid("SOPS_SHAPE_LIMIT")
+        if isinstance(value, dict):
+            if not value: raise Invalid("SOPS_EMPTY_PAYLOAD")
+            for child in value.values(): visit(child, depth + 1)
+        elif isinstance(value, list):
+            if not value: raise Invalid("SOPS_EMPTY_PAYLOAD")
+            for child in value: visit(child, depth + 1)
+        elif not encrypted_value(value): raise Invalid("SOPS_PLAINTEXT_PAYLOAD")
+    for key, value in document.items():
+        if key != "sops": visit(value)
+    return "SOPS_AGE_ENCRYPTED_VALUES_STRUCTURE_ONLY"
+
 def check(root, inventory_name="inventory.json"):
     # Intended for a quiescent, owner-protected local copy. Concurrent modifications
     # and storage failure-domain independence require a separate owner receipt.
@@ -75,9 +161,13 @@ def check(root, inventory_name="inventory.json"):
     if inventory.stat().st_size>65536: raise Invalid("INVENTORY_SIZE")
     try: c=json.loads(inventory.read_text(encoding="utf-8"),object_pairs_hook=pairs)
     except (UnicodeError,json.JSONDecodeError): raise Invalid("INVENTORY_JSON") from None
-    exact(c,("schema_version","environment","namespace","registry","source_revisions","images","server_command","secret_references","artifacts"))
-    if type(c["schema_version"]) is not int or c["schema_version"]!=1 or c["environment"]!="recovery":
+    version = c.get("schema_version") if isinstance(c, dict) else None
+    keys=("schema_version","environment","namespace","registry","source_revisions","images","server_command","secret_references","artifacts")
+    exact(c, keys + (("database_restore",) if version == 2 else ()))
+    if type(version) is not int or version not in (1, 2) or c["environment"]!="recovery":
         raise Invalid("INVENTORY_VERSION_OR_ENVIRONMENT")
+    if version == 2 and c["database_restore"] != DATABASE_RESTORE:
+        raise Invalid("EXTERNAL_DATABASE_RESTORE_CONTRACT")
     if not isinstance(c["namespace"],str) or not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*",c["namespace"]) or len(c["namespace"])>63 or c["namespace"]=="default" or c["namespace"].startswith(("kube-","openshift-")) or "input-required" in c["namespace"]:
         raise Invalid("ISOLATED_NAMESPACE")
     exact(c["source_revisions"],("app","gitops"))
@@ -91,11 +181,12 @@ def check(root, inventory_name="inventory.json"):
     if any(not isinstance(v,str) or not re.fullmatch(re.escape(c["registry"])+r"/[a-z0-9._/-]+@sha256:[0-9a-f]{64}",v) for v in c["images"].values()):
         raise Invalid("IMMUTABLE_LOCAL_IMAGES")
     rows=c["artifacts"]
-    if not isinstance(rows,list) or len(rows)!=len(ROLES): raise Invalid("ARTIFACT_ROLES")
+    required_roles = ROLES if version == 1 else ROLES - {"database_dump"}
+    if not isinstance(rows,list) or len(rows)!=len(required_roles): raise Invalid("ARTIFACT_ROLES")
     roles={}; paths=set(); allowed={inventory_name}
     for row in rows:
         exact(row,("role","path","sha256"))
-        if not isinstance(row["role"],str) or row["role"] not in ROLES or row["role"] in roles: raise Invalid("ARTIFACT_ROLES")
+        if not isinstance(row["role"],str) or row["role"] not in required_roles or row["role"] in roles: raise Invalid("ARTIFACT_ROLES")
         if not isinstance(row["sha256"],str) or not re.fullmatch(r"[a-f0-9]{64}",row["sha256"]): raise Invalid("ARTIFACT_HASH_FORMAT")
         path=safe_file(root,row["path"])
         if row["path"].casefold() in paths or row["path"].casefold()==inventory_name.casefold(): raise Invalid("DUPLICATE_ARTIFACT_PATH")
@@ -117,9 +208,7 @@ def check(root, inventory_name="inventory.json"):
         elif item.relative_to(root).as_posix() not in allowed:
             raise Invalid("UNTRACKED_BUNDLE_FILE")
     protected=roles["protected_inputs"]
-    with protected.open("rb") as stream: header=stream.read(64)
-    if not header.startswith((b"age-encryption.org/v1\n",b"-----BEGIN AGE ENCRYPTED FILE-----")):
-        raise Invalid("AGE_ENCRYPTED_INPUT_REQUIRED")
+    protected_format = protected_input_format(protected)
     for role in ("database_ca","redis_ca"):
         path=roles[role]
         if path.stat().st_size>1024*1024: raise Invalid("CA_SIZE")
@@ -136,7 +225,7 @@ def check(root, inventory_name="inventory.json"):
     if observed!=c["images"]: raise Invalid("MANIFEST_IMAGE_MAPPING")
     redis=next(r for r in resources if r["kind"]=="StatefulSet")
     if redis["spec"]["template"]["spec"]["containers"][0]["command"]!=c["server_command"]: raise Invalid("MANIFEST_SERVER_COMMAND")
-    return {"artifact_count":len(roles),"result":"SOURCE_INVENTORY_HASH_AND_MANIFEST_PASS","runtime_restore_independent_copy_identity_rto_rpo":"NOT_VERIFIED"}
+    return {"artifact_count":len(roles),"result":"SOURCE_INVENTORY_HASH_AND_MANIFEST_PASS","protected_inputs_format":protected_format,"database_source":"EXTERNAL_PERIODIC_RESTORE_REQUIRED" if version == 2 else "LEGACY_FIXED_DUMP_NOT_CURRENT_RPO_EVIDENCE","runtime_restore_independent_copy_identity_rto_rpo":"NOT_VERIFIED"}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -145,7 +234,7 @@ def main():
     args=parser.parse_args()
     try:
         print(json.dumps(check(args.bundle,args.inventory),sort_keys=True));return 0
-    except (Invalid,OSError,ValueError,KeyError,TypeError,StopIteration,yaml.YAMLError):
+    except (Invalid,OSError,ValueError,KeyError,TypeError,StopIteration,RecursionError,yaml.YAMLError):
         # No file contents, identities, paths, Secret values or raw error output.
         print("RECOVERY_BUNDLE_INVENTORY: BLOCKED / INPUT_HASH_OR_MANIFEST",file=sys.stderr);return 2
 if __name__=="__main__": sys.exit(main())

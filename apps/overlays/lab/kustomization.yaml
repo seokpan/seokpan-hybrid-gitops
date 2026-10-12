@@ -9,16 +9,17 @@ resources:
 images:
   - name: seokpan-backend
     newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/backend
-    digest: sha256:cbb7452c28f1dfe3533358916e8d0432cd65aa10865842451ab026972b55dae6
+    digest: sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f
   - name: seokpan-frontend
     newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/frontend
-    digest: sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9
+    digest: sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee
   # Lab-only Valkey 7.2.14 index digest, copied to the lab internal Registry with
   # the digest preserved (GitOps #14). Same-Namespace default ServiceAccount pull.
   - name: seokpan-lab-valkey
     newName: image-registry.openshift-image-registry.svc:5000/seokpan-argotest/valkey
     digest: sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e
-# Internal Registry in the same namespace; D reported default-SA Pull success.
+# Run7 Harbor Index candidates; same-digest internal supply and default-SA Pull
+# are unverified for these new images. Keep this PR Draft; do not Apply/Sync.
 patches:
   # 작성자: 정태훈 / 작성 날짜: 2026/10/06
   # Initial lab candidates from GitOps #14. Stage 2 (GitOps #26): lab FE/BE replicas 1,

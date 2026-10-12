@@ -60,10 +60,8 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: runtime-data
-          # A held volume interface, not a PVC/persistence policy selection.
-          # C/A may replace it with a reviewed fresh isolated volume source.
-          persistentVolumeClaim:
-            claimName: recovery-redis-storage-input-required
+          # Recovery Redis holds transient state; Pod replacement discards it.
+          emptyDir: {}
         - name: redis-config
           configMap:
             name: recovery-redis-config

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "record_kind": "candidate",
+  "completeness": "INCOMPLETE",
+  "release_id": "rel-recovery-20261012T071253Z-4840f1aef85b-fa53d1ce",
+  "source": {
+    "app_sha": "4840f1aef85b87d48084195beee725b143c6a433",
+    "infra_sha": null
+  },
+  "images": {
+    "frontend": {
+      "ecr_digest": null,
+      "harbor_digest": "sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee",
+      "platform": "linux/amd64"
+    },
+    "backend": {
+      "ecr_digest": null,
+      "harbor_digest": "sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f",
+      "platform": "linux/amd64"
+    }
+  },
+  "revisions": {
+    "schema": null,
+    "config": null,
+    "secret": null,
+    "tool_manifest": null,
+    "recovery_bundle": null
+  },
+  "review_refs": [],
+  "verification": {
+    "render": "NOT RUN",
+    "deployment": "NOT RUN",
+    "acceptance": "NOT RUN"
+  },
+  "missing_inputs": [
+    "SOURCE_COMMITS",
+    "CONFIGURATION_REVISIONS",
+    "RENDER_AND_REVIEW"
+  ]
+}
