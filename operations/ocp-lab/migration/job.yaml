@@ -23,7 +23,8 @@ spec:
         app.kubernetes.io/name: seokpan-migration
     spec:
       restartPolicy: Never
-      # Run7 candidate matches lab App; new internal supply/Pull is unverified.
+      # Run7 matches lab App; internal supply/default-SA Pull verified (#32).
+      # Migration remains on hold; Pull success is not execution approval.
       automountServiceAccountToken: false
       enableServiceLinks: false
       securityContext:
