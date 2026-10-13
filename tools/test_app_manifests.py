@@ -13,16 +13,70 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import re
 from urllib.parse import urlsplit
 
 import yaml
 
 from render_release import recovery_manifest_blockers
-
+from validate_release_record import load_record, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 KUSTOMIZE = os.environ.get("KUSTOMIZE", shutil.which("kustomize") or "kustomize")
 
+RECOVERY_REGISTRY = "harbor.seokpan.soldesk.store/seokpan-hybrid"
+COMPONENTS = ("backend", "frontend")
+DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+RELEASE_ID = re.compile(
+    r"rel-(lab|recovery|cloud)-[0-9]{8}T[0-9]{6}Z-([0-9a-f]{12})-[0-9a-z]{8}\Z")
+
+
+def load_release_candidates(directory, environment):
+    """Read releases/rel-<environment>-*.json with the Release validator.
+
+    Returns {release_id: document}. A malformed record, another environment, a
+    file name that differs from release_id, or a release_id SHA that differs from
+    source.app_sha is an error, never a skipped file.
+    """
+    found = {}
+    for path in sorted(Path(directory).glob("rel-%s-*.json" % environment)):
+        document = load_record(path.read_bytes())
+        errors = validate(document, environment=environment)
+        if errors:
+            raise AssertionError("%s: %s" % (path.name, ", ".join(errors)))
+        release_id = document.get("release_id") or ""
+        match = RELEASE_ID.match(release_id)
+        if match is None or match.group(1) != environment or path.stem != release_id:
+            raise AssertionError("%s: release_id differs from file name or environment" % path.name)
+        if document.get("record_kind") != "candidate":
+            raise AssertionError("%s: only candidate records are accepted" % path.name)
+        if not (document["source"].get("app_sha") or "").startswith(match.group(2)):
+            raise AssertionError("%s: release_id SHA differs from source.app_sha" % path.name)
+        found[release_id] = document
+    return found
+
+
+def overlay_images(path):
+    document = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    return {entry["name"]: entry for entry in document.get("images", [])}
+
+
+def recovery_release_matches(images, candidates):
+    """Release ids whose backend AND frontend harbor_digest both equal the overlay's."""
+    wanted = {}
+    for component in COMPONENTS:
+        entry = images.get("seokpan-" + component)
+        if not isinstance(entry, dict):
+            raise AssertionError("seokpan-%s image entry is missing" % component)
+        if entry.get("newName") != "%s/%s" % (RECOVERY_REGISTRY, component):
+            raise AssertionError("seokpan-%s newName is not the Recovery Harbor repository" % component)
+        digest = entry.get("digest")
+        if not isinstance(digest, str) or not DIGEST.match(digest):
+            raise AssertionError("seokpan-%s digest must be sha256:<64 hex>" % component)
+        wanted[component] = digest
+    return sorted(release_id for release_id, document in candidates.items()
+                  if all(document["images"][c]["harbor_digest"] == wanted[c]
+                         for c in COMPONENTS))
 
 class AppManifestBoundaries(unittest.TestCase):
     @classmethod
@@ -35,6 +89,17 @@ class AppManifestBoundaries(unittest.TestCase):
                 check=True, capture_output=True, text=True,
             ).stdout
             cls.renders[name] = list(yaml.safe_load_all(rendered))
+
+    def recovery_expected_images(self):
+        # F4 (#45): Recovery digests are not pinned here. Frontend and backend must
+        # both match ONE recovery release candidate; expected images derive from it.
+        candidates = load_release_candidates(ROOT / "releases", "recovery")
+        images = overlay_images(ROOT / "apps/overlays/recovery/kustomization.yaml")
+        self.assertTrue(
+            recovery_release_matches(images, candidates),
+            "Recovery frontend and backend digests must both match one recovery release candidate")
+        return {c: "%s/%s@%s" % (RECOVERY_REGISTRY, c, images["seokpan-" + c]["digest"])
+                for c in COMPONENTS}
 
     def by_kind(self, env, kind):
         return [r for r in self.renders[env] if r["kind"] == kind]
@@ -76,10 +141,7 @@ class AppManifestBoundaries(unittest.TestCase):
                             "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:e9fb167a9afd753f5ca4ef1644efd9d0a310b82cc42d4331ebaa65bbf4bfa4d9",
                         }
                         if env == "recovery":
-                            approved = {
-                                "backend": "harbor.seokpan.soldesk.store/seokpan-hybrid/backend@sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f",
-                                "frontend": "harbor.seokpan.soldesk.store/seokpan-hybrid/frontend@sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee",
-                            }
+                            approved = self.recovery_expected_images()
                         if env == "lab":
                             # Run7 internal supply/default-SA Pull verified by D (#32).
                             # Runtime remains unverified; Recovery keeps prior supply.
@@ -749,6 +811,66 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
             output.write_text("preserved reviewed artifact", encoding="utf-8")
             self.assertEqual(render(reviewed).returncode, 2)
             self.assertEqual(output.read_text(encoding="utf-8"), "preserved reviewed artifact")
+
+class RecoveryDigestFromReleaseCandidate(unittest.TestCase):
+    """F4: Recovery digests must come from one reviewed release candidate."""
+
+    OLD = {"backend": "sha256:" + "1" * 64, "frontend": "sha256:" + "2" * 64}
+    NEW = {"backend": "sha256:" + "3" * 64, "frontend": "sha256:" + "4" * 64}
+
+    @staticmethod
+    def images(digests, registry=RECOVERY_REGISTRY):
+        return {"seokpan-" + c: {"name": "seokpan-" + c, "newName": registry + "/" + c,
+                                 "digest": digests[c]} for c in COMPONENTS}
+
+    @staticmethod
+    def candidate(digests):
+        return {"images": {c: {"harbor_digest": digests[c]} for c in COMPONENTS}}
+
+    def test_both_digests_in_one_candidate_match(self):
+        matches = recovery_release_matches(
+            self.images(self.NEW), {"rel-a": self.candidate(self.NEW)})
+        self.assertEqual(matches, ["rel-a"])
+
+    def test_return_to_an_earlier_valid_candidate_is_allowed(self):
+        candidates = {"rel-old": self.candidate(self.OLD), "rel-new": self.candidate(self.NEW)}
+        self.assertEqual(recovery_release_matches(self.images(self.OLD), candidates), ["rel-old"])
+
+    def test_digest_without_a_candidate_is_rejected(self):
+        self.assertEqual(
+            recovery_release_matches(self.images(self.NEW), {"rel-old": self.candidate(self.OLD)}), [])
+
+    def test_frontend_and_backend_from_different_candidates_are_rejected(self):
+        mixed = {"backend": self.OLD["backend"], "frontend": self.NEW["frontend"]}
+        candidates = {"rel-old": self.candidate(self.OLD), "rel-new": self.candidate(self.NEW)}
+        self.assertEqual(recovery_release_matches(self.images(mixed), candidates), [])
+
+    def test_malformed_digest_or_wrong_registry_is_rejected(self):
+        candidates = {"rel-a": self.candidate(self.NEW)}
+        for digests in ({"backend": "sha256:abc", "frontend": self.NEW["frontend"]},
+                        {"backend": self.NEW["backend"].replace("sha256:", ""),
+                         "frontend": self.NEW["frontend"]}):
+            with self.subTest(digests=digests), self.assertRaises(AssertionError):
+                recovery_release_matches(self.images(digests), candidates)
+        with self.assertRaises(AssertionError):
+            recovery_release_matches(
+                self.images(self.NEW, registry="harbor.example.test/other"), candidates)
+
+    def test_loader_rejects_environment_name_and_sha_mismatch(self):
+        source = next((ROOT / "releases").glob("rel-recovery-*.json"))
+        original = json.loads(source.read_text(encoding="utf-8"))
+        mutations = {
+            "other environment": lambda d: d.update(release_id=d["release_id"].replace("rel-recovery-", "rel-cloud-")),
+            "SHA differs from app_sha": lambda d: d["source"].update(app_sha="0" * 40),
+            "release_id differs from file name": lambda d: d.update(release_id=d["release_id"][:-1] + "0"),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                document = copy.deepcopy(original)
+                mutate(document)
+                (Path(directory) / source.name).write_text(json.dumps(document), encoding="utf-8")
+                with self.assertRaises(AssertionError):
+                    load_release_candidates(directory, "recovery")
 
 
 if __name__ == "__main__":
