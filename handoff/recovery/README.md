@@ -1,5 +1,7 @@
 # Recovery Bundle 로컬 인벤토리 검사
 
+Recovery Redis 보호 입력의 실제 분리 공급은 [공급 절차](PROTECTED_INPUT_SUPPLY.md)를 따른다. 도구 준비와 실제 객체 공급/TLS/업무 수락을 구분한다.
+
 `tools/check_recovery_bundle.py`는 반입된 **정지 상태의 보호된 로컬 사본**(POSIX: 루트와 모든 하위 폴더는 본인 소유700, 인벤토리·Artifact 일반 파일은 본인 소유600)에서 인벤토리 형식·파일 SHA-256·기존 Recovery 활성 Manifest Gate·컨테이너별 Image Mapping을 대조한다. 실제 Bundle을 지금 만들었다는 기록이 아니다. 테스트는 임시 합성 파일이며 실제 DB·Image·CA·암호화 자료가 아니다.
 
 ```bash
