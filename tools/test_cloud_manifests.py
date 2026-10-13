@@ -85,8 +85,11 @@ class CloudManifestBoundaries(unittest.TestCase):
                 self.assertIn("input-required", deployment["metadata"]["annotations"][
                     "seokpan.io/release-state"])
                 container = deployment["spec"]["template"]["spec"]["containers"][0]
-                self.assertEqual(container["image"],
-                                 CLOUD_ECR[deployment["metadata"]["name"]] + "@INPUT_REQUIRED")
+                # Held until Promotion fills it; once filled, the digest is covered by
+                # test_cloud_images_use_fixed_ecr_names_and_ecr_digest_from_one_cloud_candidate.
+                repository, _, reference = container["image"].partition("@")
+                self.assertEqual(repository, CLOUD_ECR[deployment["metadata"]["name"]])
+                self.assertTrue(reference == "INPUT_REQUIRED" or DIGEST.match(reference))
 
     def test_cloud_images_use_fixed_ecr_names_and_ecr_digest_from_one_cloud_candidate(self):
         images = overlay_images(ROOT / "apps/overlays/cloud/runtime/kustomization.yaml")
