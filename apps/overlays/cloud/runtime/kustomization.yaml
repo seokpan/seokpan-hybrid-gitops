@@ -7,14 +7,15 @@ resources:
   - ../../../base
   - routes.yaml
 images:
-  # Consume foundation's ecr_repository_urls[backend/frontend] after Apply,
-  # then use approved component digests. Never borrow Harbor/CI login tokens.
+  # newName is fixed to the foundation ECR repositories (team decision 2026-10-13,
+  # seokpan/seokpan-hybrid-app#47). digest stays INPUT_REQUIRED until Promotion fills it
+  # from metadata ecr.final_digest. Never borrow Harbor digests or CI login tokens.
   - name: seokpan-backend
-    newName: ecr-input-required.invalid/seokpan-fnd-backend
-    newTag: INPUT_REQUIRED
+    newName: 847835841591.dkr.ecr.ap-northeast-2.amazonaws.com/seokpan-fnd-backend
+    digest: INPUT_REQUIRED
   - name: seokpan-frontend
-    newName: ecr-input-required.invalid/seokpan-fnd-frontend
-    newTag: INPUT_REQUIRED
+    newName: 847835841591.dkr.ecr.ap-northeast-2.amazonaws.com/seokpan-fnd-frontend
+    digest: INPUT_REQUIRED
 # envFrom is read on Pod startup: keep the generated content hash so a
 # reviewed runtime configuration change also changes the Pod template ref.
 configMapGenerator:

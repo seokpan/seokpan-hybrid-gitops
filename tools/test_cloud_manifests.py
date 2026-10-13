@@ -7,6 +7,7 @@ No cluster, registry or AWS calls are made. Requires Kustomize and PyYAML.
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -17,10 +18,47 @@ from urllib.parse import urlsplit
 import yaml
 
 from render_release import app_manifest_blockers
+from test_app_manifests import load_release_candidates, overlay_images
 
 
 ROOT = Path(__file__).resolve().parents[1]
 KUSTOMIZE = os.environ.get("KUSTOMIZE", shutil.which("kustomize") or "kustomize")
+
+CLOUD_ECR = {
+    "backend": "847835841591.dkr.ecr.ap-northeast-2.amazonaws.com/seokpan-fnd-backend",
+    "frontend": "847835841591.dkr.ecr.ap-northeast-2.amazonaws.com/seokpan-fnd-frontend",
+}
+PLACEHOLDER = "INPUT_REQUIRED"
+DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+def cloud_release_state(images, candidates):
+    """Return "placeholder" while both digests are INPUT_REQUIRED.
+
+    Otherwise return the cloud release ids whose ecr_digest (never harbor_digest)
+    equals BOTH overlay digests. Fixed newName, digest (not newTag) and a
+    sha256 form are enforced; a half-filled overlay is rejected.
+    """
+    wanted = {}
+    for component in ("backend", "frontend"):
+        entry = images.get("seokpan-" + component)
+        if not isinstance(entry, dict):
+            raise AssertionError("seokpan-%s image entry is missing" % component)
+        if "newTag" in entry:
+            raise AssertionError("seokpan-%s must use digest, not newTag" % component)
+        if entry.get("newName") != CLOUD_ECR[component]:
+            raise AssertionError("seokpan-%s newName is not the approved ECR repository" % component)
+        digest = entry.get("digest")
+        if digest != PLACEHOLDER and not (isinstance(digest, str) and DIGEST.match(digest)):
+            raise AssertionError("seokpan-%s digest must be INPUT_REQUIRED or sha256:<64 hex>" % component)
+        wanted[component] = digest
+    placeholders = [c for c in wanted if wanted[c] == PLACEHOLDER]
+    if len(placeholders) == 2:
+        return "placeholder"
+    if placeholders:
+        raise AssertionError("Cloud digests must be both INPUT_REQUIRED or both sha256 digests")
+    return sorted(release_id for release_id, document in candidates.items()
+                  if all(document["images"][c]["ecr_digest"] == wanted[c] for c in wanted))
 
 
 class CloudManifestBoundaries(unittest.TestCase):
@@ -47,8 +85,15 @@ class CloudManifestBoundaries(unittest.TestCase):
                 self.assertIn("input-required", deployment["metadata"]["annotations"][
                     "seokpan.io/release-state"])
                 container = deployment["spec"]["template"]["spec"]["containers"][0]
-                self.assertIn("ecr-input-required.invalid/seokpan-fnd-", container["image"])
-                self.assertIn("INPUT_REQUIRED", container["image"])
+                self.assertEqual(container["image"],
+                                 CLOUD_ECR[deployment["metadata"]["name"]] + "@INPUT_REQUIRED")
+
+    def test_cloud_images_use_fixed_ecr_names_and_ecr_digest_from_one_cloud_candidate(self):
+        images = overlay_images(ROOT / "apps/overlays/cloud/runtime/kustomization.yaml")
+        candidates = load_release_candidates(ROOT / "releases", "cloud")
+        state = cloud_release_state(images, candidates)
+        self.assertTrue(state == "placeholder" or state,
+                        "Cloud digests must be INPUT_REQUIRED or match one cloud release candidate's ecr_digest")
 
     def test_cloud_requires_explicit_lifecycle_rollout_input_before_multi_replica_release(self):
         for preview in self.renders:
@@ -196,6 +241,57 @@ class CloudManifestBoundaries(unittest.TestCase):
             self.assertIn("INPUT_REQUIRED", result.stderr)
             self.assertIn("zero-replica activation hold", result.stderr)
             self.assertFalse(output.exists())
+
+
+class CloudDigestFromReleaseCandidate(unittest.TestCase):
+    """Cloud digests come from ecr_digest of ONE cloud candidate; Harbor is never a substitute."""
+
+    A = {"backend": "sha256:" + "a" * 64, "frontend": "sha256:" + "b" * 64}
+    B = {"backend": "sha256:" + "c" * 64, "frontend": "sha256:" + "d" * 64}
+
+    @staticmethod
+    def images(digests, names=CLOUD_ECR):
+        return {"seokpan-" + c: {"name": "seokpan-" + c, "newName": names[c], "digest": digests[c]}
+                for c in ("backend", "frontend")}
+
+    @staticmethod
+    def candidate(ecr, harbor):
+        return {"images": {c: {"ecr_digest": ecr[c], "harbor_digest": harbor[c]}
+                           for c in ("backend", "frontend")}}
+
+    def test_placeholders_are_accepted_until_the_first_promotion(self):
+        both = {c: PLACEHOLDER for c in ("backend", "frontend")}
+        self.assertEqual(cloud_release_state(self.images(both), {}), "placeholder")
+
+    def test_both_digests_matching_one_candidate_ecr_digest_pass(self):
+        candidates = {"rel-cloud-a": self.candidate(self.A, self.B)}
+        self.assertEqual(cloud_release_state(self.images(self.A), candidates), ["rel-cloud-a"])
+
+    def test_harbor_digest_can_never_stand_in_for_ecr_digest(self):
+        candidates = {"rel-cloud-a": self.candidate(self.A, self.B)}
+        self.assertEqual(cloud_release_state(self.images(self.B), candidates), [])
+
+    def test_frontend_and_backend_from_different_candidates_are_rejected(self):
+        candidates = {"rel-cloud-a": self.candidate(self.A, self.A),
+                      "rel-cloud-b": self.candidate(self.B, self.B)}
+        mixed = {"backend": self.A["backend"], "frontend": self.B["frontend"]}
+        self.assertEqual(cloud_release_state(self.images(mixed), candidates), [])
+
+    def test_half_filled_overlay_new_tag_wrong_name_and_bad_digest_are_rejected(self):
+        half = {"backend": self.A["backend"], "frontend": PLACEHOLDER}
+        with self.assertRaises(AssertionError):
+            cloud_release_state(self.images(half), {})
+        with_tag = self.images(self.A)
+        with_tag["seokpan-backend"]["newTag"] = "v1"
+        with self.assertRaises(AssertionError):
+            cloud_release_state(with_tag, {})
+        for bad_name in ("harbor.seokpan.soldesk.store/seokpan-hybrid/%s",
+                         "ecr-input-required.invalid/seokpan-fnd-%s"):
+            names = {c: bad_name % c for c in ("backend", "frontend")}
+            with self.subTest(newName=bad_name), self.assertRaises(AssertionError):
+                cloud_release_state(self.images(self.A, names=names), {})
+        with self.assertRaises(AssertionError):
+            cloud_release_state(self.images({"backend": "sha256:abc", "frontend": self.A["frontend"]}), {})
 
 
 if __name__ == "__main__":
