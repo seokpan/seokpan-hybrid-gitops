@@ -116,6 +116,18 @@ class SupplyTests(unittest.TestCase):
         with self.assertRaisesRegex(prep.Rejected, "SUPPLIED_OBJECT_MISMATCH"):
             self.supplier(cli).supply(objects(), "verify")
 
+    def test_partial_verify_retains_matched_uids_before_missing_object(self):
+        cli = FakeCLI()
+        cli.fail_create = 3
+        with self.assertRaises(prep.Rejected):
+            self.supplier(cli).supply(objects(), "create")
+        supplier = self.supplier(cli)
+        before = len(cli.saved)
+        with self.assertRaisesRegex(prep.Rejected, "SUPPLIED_OBJECT_MISSING"):
+            supplier.supply(objects(), "verify")
+        self.assertEqual(len(supplier.verified_receipts), 2)
+        self.assertEqual(len(cli.saved), before)
+
     def test_sops_errors_redacted(self):
         def fake(*args, **kwargs):
             return SimpleNamespace(returncode=1, stdout=b"", stderr=b"secret-value-sentinel")

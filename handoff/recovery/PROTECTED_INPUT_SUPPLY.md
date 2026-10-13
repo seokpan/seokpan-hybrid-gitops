@@ -30,7 +30,7 @@ python3 tools/supply_recovery_redis_inputs.py "$recovery_cipher" \
 
 create에서도 이름 부재·다섯 dry-run·쓰기 직전 대상 Identity를 확인한다. 기존 객체는 내용이 같아도 덮어쓰지 않는다. 각 객체 create 뒤 UID·내용·run marker를 readback한다. 실행당 SOPS1회·CLI35회 상한/명령당20초이며 평문은 메모리/stdin 파이프만 사용한다. 출력은 고정 판정·객체 이름/UID·호출 수뿐이다. 기본 `--mode check`는 API 없이 매핑만 확인한다.
 
-STOP이면 **create/dry-run을 반복하지 않는다**. 확인된 생성 이름/UID·create 시도 수를 보존해 B가 현재 상태를 판단한다. 부분 생성은 남기며 자동 삭제/rollback하지 않는다. 읽기 대조는 다음과 같다. 불확실한 create의 실제 성공과 누락 객체를 확인한 뒤 남은 공급은 별도로 결정한다.
+STOP이면 **create/dry-run을 반복하지 않는다**. 확인된 생성 이름/UID·create 시도 수를 보존해 B가 현재 상태를 판단한다. 부분 생성은 남기며 자동 삭제/rollback하지 않는다. 읽기 대조는 다음과 같다. verify는 최초 누락/불일치에서 멈추고 그 전까지 내용/run marker가 맞았던 이름/UID를 verified_objects로 반환한다. 불확실한 create의 실제 성공과 누락 객체를 확인한 뒤 남은 공급은 별도로 결정한다.
 
 ```bash
 python3 tools/supply_recovery_redis_inputs.py "$recovery_cipher" \

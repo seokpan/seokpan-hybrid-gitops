@@ -81,6 +81,7 @@ class Supplier:
         self.context, self.server, self.namespace_uid, self.run_id = context, api_server, namespace_uid, run_id
         self.runner, self.calls, self.create_attempts = runner, 0, 0
         self.receipts = []
+        self.verified_receipts = []
 
     def call(self, args, value=None, absent_ok=False):
         self.calls += 1
@@ -142,9 +143,15 @@ class Supplier:
         self.target()
         if mode == "verify":
             for obj in objects:
-                current = self.get(obj)
+                current = self.get(obj, absent_ok=True)
+                if current is None:
+                    raise prep.Rejected("SUPPLIED_OBJECT_MISSING")
                 if not same_object(current, obj, self.run_id):
                     raise prep.Rejected("SUPPLIED_OBJECT_MISMATCH")
+                uid = current.get("metadata", {}).get("uid")
+                if not uid:
+                    raise prep.Rejected("SUPPLIED_OBJECT_UID_MISSING")
+                self.verified_receipts.append({"kind": obj["kind"], "name": obj["metadata"]["name"], "uid": uid})
             return "PASS_OBJECT_CONTENT_AND_RUN_MARKER_NOT_TLS_RUNTIME"
         # All existing objects must be absent before any server dry-run/create.
         for obj in objects:
@@ -202,6 +209,7 @@ def main(argv=None):
     result.update(sops_decrypt_invocations=decrypt_attempts, cli_calls=0 if supplier is None else supplier.calls,
                   create_attempts=0 if supplier is None else supplier.create_attempts,
                   confirmed_created=[] if supplier is None else supplier.receipts,
+                  verified_objects=[] if supplier is None else supplier.verified_receipts,
                   workload_activation="NOT_RUN", runtime_tls_auth="NOT_VERIFIED")
     print(json.dumps(result, sort_keys=True))
     return code
