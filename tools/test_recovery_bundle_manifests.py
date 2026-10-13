@@ -16,7 +16,7 @@ class RecoveryBundleTests(unittest.TestCase):
         case=test_app_manifests.RecoveryReleaseBoundaries()
         manifest=case.fixture()
         payloads={"app_manifest":yaml.safe_dump_all(manifest).encode(),"image_archive":b"synthetic OCI archive, not actual images","database_dump":b"synthetic dump, not actual data","database_ca":b"-----BEGIN CERTIFICATE-----\nfixture-only\n-----END CERTIFICATE-----\n","redis_ca":b"-----BEGIN CERTIFICATE-----\nfixture-only\n-----END CERTIFICATE-----\n","protected_inputs":b"age-encryption.org/v1\nsynthetic-envelope-not-decryptable","tool_archive":b"synthetic tools","source_archive":b"synthetic source"}
-        c={"schema_version":1,"environment":"recovery","namespace":case.namespace,"registry":case.registry,"source_revisions":{"app":"a"*40,"gitops":"b"*40},"images":{r["metadata"]["name"]:r["spec"]["template"]["spec"]["containers"][0]["image"] for r in manifest if r["kind"] in ("Deployment","StatefulSet")},"server_command":["redis-server"],"secret_references":copy.deepcopy(REFS),"artifacts":[]}
+        c={"schema_version":1,"environment":"recovery","namespace":case.namespace,"registry":case.registry,"source_revisions":{"app":"a"*40,"gitops":"b"*40},"images":{r["metadata"]["name"]:r["spec"]["template"]["spec"]["containers"][0]["image"] for r in manifest if r["kind"] in ("Deployment","StatefulSet")},"server_command":["valkey-server"],"secret_references":copy.deepcopy(REFS),"artifacts":[]}
         for role,data in payloads.items():
             path=role+".fixture";(root/path).write_bytes(data);(root/path).chmod(0o600)
             c["artifacts"].append({"role":role,"path":path,"sha256":hashlib.sha256(data).hexdigest()})
@@ -38,7 +38,7 @@ class RecoveryBundleTests(unittest.TestCase):
                 p.unlink() if missing else p.write_bytes(b"changed")
                 with self.assertRaises((Invalid,OSError)):check(root)
     def test_traversal_duplicate_unknown_and_live_secret_metadata_fail(self):
-        mutations=[lambda c:c["artifacts"][0].update(path="../external"),lambda c:c["artifacts"][0].update(path="C:/external"),lambda c:c["artifacts"][1].update(path=c["artifacts"][0]["path"]),lambda c:c.update(secret_value="sentinel-do-not-output"),lambda c:c["secret_references"].update(client_secret="sentinel"),lambda c:c.update(source_revisions={"app":"main","gitops":"b"*40}),lambda c:c.update(namespace="default"),lambda c:c.update(server_command=["valkey-server"]),lambda c:c["images"].update(backend="harbor.fixture.test/backend:latest")]
+        mutations=[lambda c:c["artifacts"][0].update(path="../external"),lambda c:c["artifacts"][0].update(path="C:/external"),lambda c:c["artifacts"][1].update(path=c["artifacts"][0]["path"]),lambda c:c.update(secret_value="sentinel-do-not-output"),lambda c:c["secret_references"].update(client_secret="sentinel"),lambda c:c.update(source_revisions={"app":"main","gitops":"b"*40}),lambda c:c.update(namespace="default"),lambda c:c.update(server_command=["redis-server"]),lambda c:c["images"].update(backend="harbor.fixture.test/backend:latest")]
         for n,mutate in enumerate(mutations):
             with self.subTest(case=n),tempfile.TemporaryDirectory() as td:
                 root=Path(td);c=self.bundle(root);mutate(c);self.save(root,c)

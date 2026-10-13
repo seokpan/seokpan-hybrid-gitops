@@ -247,7 +247,7 @@ class AppManifestBoundaries(unittest.TestCase):
         recovery = self.backend_config("recovery")["data"]
         self.assertEqual(recovery["SEOKPAN_DATABASE_EXPECTED_HOST"], "192.168.54.60")
         self.assertEqual(recovery["SEOKPAN_REDIS_EXPECTED_HOST"],
-                         "recovery-redis.recovery-input-required.svc")
+                         "recovery-redis.seokpan-recovery.svc")
 
     def test_lab_valkey_source_is_stage1_active_tls_auth_unpersisted_and_internal_only(self):
         redis, = self.by_kind("lab", "StatefulSet")
@@ -319,7 +319,7 @@ class AppManifestBoundaries(unittest.TestCase):
         pod = redis["spec"]["template"]["spec"]
         container, = pod["containers"]
         self.assertEqual(redis["spec"]["replicas"], 0)
-        self.assertEqual(container["command"], ["redis-server"])
+        self.assertEqual(container["command"], ["valkey-server"])
         self.assertEqual(container["args"], ["/etc/seokpan/redis/redis.conf"])
         self.assertNotIn("env", container)
         self.assertNotIn("volumeClaimTemplates", redis["spec"])
@@ -339,10 +339,32 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertIn("\nport 0\n", config)
         self.assertIn("\ntls-port 6379\n", config)
         self.assertIn("\ntls-auth-clients no\n", config)
-        for directive in ("requirepass ", "aclfile ", "user ", "maxmemory "):
+        for directive in ("requirepass ", "aclfile ", "user "):
             self.assertFalse(any(line.startswith(directive) for line in config.splitlines()))
         for directive in ('save ""', 'appendonly no', 'maxmemory-policy noeviction'):
             self.assertIn(directive, config.splitlines())
+
+    def test_recovery_initial_budget_preserves_holds_and_other_environments(self):
+        expected = {"frontend": ("25m", "32Mi", "250m", "64Mi"),
+                    "backend": ("100m", "128Mi", "500m", "256Mi"),
+                    "recovery-redis": ("100m", "512Mi", "500m", "512Mi")}
+        memory_requests = memory_limits = 0
+        for workload in self.workloads("recovery"):
+            self.assertEqual(workload["metadata"]["namespace"], "seokpan-recovery")
+            self.assertEqual(workload["spec"]["replicas"], 0)
+            resource = workload["spec"]["template"]["spec"]["containers"][0]["resources"]
+            values = expected[workload["metadata"]["name"]]
+            self.assertEqual(resource, {"requests": {"cpu": values[0], "memory": values[1]},
+                                        "limits": {"cpu": values[2], "memory": values[3]}})
+            memory_requests += int(resource["requests"]["memory"][:-2])
+            memory_limits += int(resource["limits"]["memory"][:-2])
+        self.assertEqual((memory_requests, memory_limits), (672, 832))
+        # Resource budgets apply only in Recovery, including its render namespace.
+        for env in ("base", "lab"):
+            self.assertFalse(any(r["metadata"].get("namespace") == "seokpan-recovery"
+                                 for r in self.renders[env]))
+        self.assertEqual(self.by_kind("lab", "StatefulSet")[0]["spec"]["template"][
+            "spec"]["containers"][0]["resources"]["limits"]["memory"], "256Mi")
 
     def test_release_gate_withholds_draft_and_does_not_overwrite_previous_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -452,6 +474,10 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
             {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "recovery-redis-config"},
              "data": {"redis.conf": (ROOT / "apps/overlays/recovery/redis.conf").read_text(encoding="utf-8")}},
         ])
+        patch_docs = list(yaml.safe_load_all((ROOT / "apps/overlays/recovery/resources.yaml").read_text(encoding="utf-8")))
+        for patch in patch_docs:
+            workload = self.resource(resources, "Deployment", patch["metadata"]["name"])
+            workload["spec"]["template"]["spec"]["containers"][0]["resources"] = patch["spec"]["template"]["spec"]["containers"][0]["resources"]
         for r in resources:
             r["metadata"]["namespace"] = self.namespace
             if r["kind"] in ("Deployment", "StatefulSet"):
@@ -481,6 +507,37 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
     def blockers(self, resources, namespace=None, registry=None):
         return recovery_manifest_blockers(yaml.safe_dump_all(resources),
                                           namespace or self.namespace, registry or self.registry)
+
+    def test_recovery_resource_drift_is_rejected_before_activation(self):
+        for name in ("frontend", "backend", "recovery-redis"):
+            for group, key, value in (("requests", "memory", "1Mi"),
+                                      ("limits", "memory", "1Gi"),
+                                      ("requests", "cpu", "1m")):
+                with self.subTest(name=name, group=group, key=key):
+                    resources = self.fixture()
+                    kind = "StatefulSet" if name == "recovery-redis" else "Deployment"
+                    container = self.resource(resources, kind, name)["spec"]["template"][
+                        "spec"]["containers"][0]
+                    container["resources"][group][key] = value
+                    self.assertIn("Recovery initial resource budget requires a reviewed Source change",
+                                  self.blockers(resources))
+
+    def test_recovery_memory_and_directory_overrides_are_rejected(self):
+        for old, new in (("maxmemory 384mb", "maxmemory 512mb"),
+                         ("maxmemory 384mb", "maxmemory 384mb\nMAXMEMORY 0"),
+                         ("dir /data", "dir /tmp")):
+            with self.subTest(new=new):
+                resources = self.fixture()
+                data = self.resource(resources, "ConfigMap", "recovery-redis-config")["data"]
+                data["redis.conf"] = data["redis.conf"].replace(old, new)
+                self.assertTrue(self.blockers(resources))
+
+    def test_recovery_legacy_binary_is_rejected(self):
+        resources = self.fixture()
+        container = self.resource(resources, "StatefulSet", "recovery-redis")["spec"][
+            "template"]["spec"]["containers"][0]
+        container["command"] = ["redis-server"]
+        self.assertTrue(self.blockers(resources))
 
     def test_reviewed_source_keeps_storage_technology_an_owner_choice(self):
         resources = self.fixture()

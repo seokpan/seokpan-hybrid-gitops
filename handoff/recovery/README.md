@@ -12,7 +12,9 @@ python3 tools/check_recovery_bundle.py /private/received-bundle
 
 `secret_references`의 정확한 논리 이름/Key는 도구의 `REFS`와 공통 App/Migration 계약을 따른다. 값은 넣지 않는다. 보호 입력은 raw age 헤더 또는 프로젝트의 SOPS+age YAML 구조를 허용한다. SOPS는 중복 Key·Alias를 거부하고, `sops.age` 수신자/age envelope·암호문 MAC·버전과 모든 비메타데이터 Leaf의 `ENC[AES256_GCM,...]` 구조를 확인한다. 일부 값만 암호화되고 나머지가 평문이면 거부한다. 입력은 최대256KiB·깊이32로 제한한다. 이 검사는 형식만 확인하며 실제 암호화·MAC 무결성·복호화 가능·키 보유·Identity를 증명하지 않는다. 합성 시험의 암호문도 실제 복호화 자료가 아니다. 실제 공급 때 C의 SOPS 복호화/MAC 확인과 보호 개정 수락이 별도로 필요하다. [SOPS 공식 형식](https://getsops.io/docs/)을 따른다. CA는 공개 PEM 표식과 Private Key 부재만 검사하고 X.509 체인·수명·DNS/SAN 신뢰는 실제 TLS 시험에서 판정한다. Secret 공급은 App Manifest와 분리하며 두 CA Artifact의 실제 ConfigMap 공급 내용 동일성은 별도 수락한다.
 
-Recovery 서버 명령은 현행 Source/Gate의 `redis-server`와 맞아야 한다. 이 계약은 특정 Image의 binary 존재나 Engine 채택을 승인하지 않는다. C/D가 승인한 Image가 다른 binary를 요구하면 Recovery Source와 기존 Gate 및 이 인벤토리 계약/시험을 같은 리뷰에서 개정한다. lab의 Valkey 명령·저장소·CA를 그대로 가져오지 않는다. TCP Probe 성공은 TLS/AUTH 성공을 대신하지 않는다.
+Recovery 서버 명령은 채택한 Valkey 7.2.14 Source/Gate의 `valkey-server`와 맞아야 한다. 이 계약은 특정 Image의 binary 존재나 Engine 채택을 승인하지 않는다. C/D가 승인한 Image가 다른 binary를 요구하면 Recovery Source와 기존 Gate 및 이 인벤토리 계약/시험을 같은 리뷰에서 개정한다. lab의 Valkey 명령·저장소·CA를 그대로 가져오지 않는다. TCP Probe 성공은 TLS/AUTH 성공을 대신하지 않는다.
+
+이 서버 명령 검사는 v1/v2 인벤토리에 모두 적용된다. 이전 `server_command: ["redis-server"]`로 작성한 v1 Bundle이 있으면 현재 검사기는 거부한다. 원본을 보존하고 현재 승인 Source·Manifest·Image와 `valkey-server`에 맞춘 새 Bundle 인벤토리/해시를 작성·재검증해야 한다. schema_version 1 지원이 이전 서버 명령의 호환 수락을 뜻하지 않는다.
 
 독립 사본 수락은 별도다. Controller 밖의 보존 위치/Owner·복호화 Key 확보 경로·새 복원 환경 Identity·CA·도구 가용성·실제 사본 해시를 확인하고, Controller가 없는 조건에서 공급/복원 가능한지 시험한다. 다른 폴더에 같은 Bundle을 놓는 것만으로 독립 사본을 증명하지 않는다. RTO10분·영속 DB RPO30분·Portable Backup15분 요구는 실제 Data 시점/완성 지연·탐지부터 업무 재개 시간으로 검증한다.
 
@@ -40,3 +42,7 @@ SOPS 공급 계약은 YAML이다. SOPS JSON은 지원 형식에 포함하지 않
 DB 복원은 [Infra #48](https://github.com/seokpan/seokpan-hybrid-infra/issues/48)의 기존 `restore.sh`로 진행한다. 운영 자동 선택은 `periodic-*`의 Backup ID UTC 데이터 시각 내림차순이며 SHA-256이 맞는 사본을 선택한다. 파일 도착 시각이나 `rehearsal-*`를 운영 기준으로 쓰지 않는다. 이후 age/gunzip/import 종료 코드·Revision·테이블 수·비교를 확인한다. 본 Bundle 검사기는 SSH·DB·복원 스크립트를 실행하지 않는다.
 
 현재 `restore.sh`는 사본의 최대 나이30분을 실행 전에 거부하지 않는다. 따라서 선택된 사본이 최신이라고 RPO30분을 통과한 것은 아니다. 실제 수행자는 선택 Backup ID의 데이터 시각과 T0를 대조하고30분을 넘으면 RPO PASS로 수락하지 않는다. 복호화·가져오기 실패를 자동 재시도로 덮지 않는다. 독립 사본·복원 Identity·실제 RTO/RPO는 계속 `NOT_VERIFIED`다.
+
+## 채택한 Recovery 초기 계약
+
+Namespace·Engine·자원표·메모리 산식·CLI/AUTH·담당 경계와 이관 순서는 [App의 채택 계약](../../apps/README.md#2026-10-13-채택한-recovery-초기-계약)을 기준으로 한다. 이 문서는 Bundle 인벤토리·보호 입력·독립 사본 검사 조건을 설명한다.

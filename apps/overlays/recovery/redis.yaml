@@ -27,7 +27,11 @@ spec:
           imagePullPolicy: IfNotPresent
           # The supplied local image must support this binary and arbitrary UID.
           # Passwords are read by Redis from C's protected include, never argv.
-          command: [redis-server]
+          command: [valkey-server]
+          # Initial budget only; actual RSS/peak/OOM acceptance remains pending.
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 512Mi}
           args: [/etc/seokpan/redis/redis.conf]
           ports: [{name: redis-tls, containerPort: 6379, protocol: TCP}]
           # Listener-only probes: a TCP connection does not validate TLS, AUTH,

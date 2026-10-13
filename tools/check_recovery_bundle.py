@@ -176,7 +176,7 @@ def check(root, inventory_name="inventory.json"):
     if any(not isinstance(v,str) or not re.fullmatch(r"[a-f0-9]{40}",v) for v in c["source_revisions"].values()):
         raise Invalid("SOURCE_REVISION")
     if c["secret_references"]!=REFS: raise Invalid("SECRET_REFERENCE_CONTRACT")
-    if c["server_command"]!=["redis-server"]: raise Invalid("SERVER_SOURCE_CONTRACT_REVIEW_REQUIRED")
+    if c["server_command"]!=["valkey-server"]: raise Invalid("SERVER_SOURCE_CONTRACT_REVIEW_REQUIRED")
     exact(c["images"],("backend","frontend","recovery-redis"))
     if not isinstance(c["registry"],str) or not re.fullmatch(r"[a-zA-Z0-9.-]+(?::[0-9]+)?",c["registry"]) or c["registry"].endswith(".invalid"):
         raise Invalid("REGISTRY_INPUT")
