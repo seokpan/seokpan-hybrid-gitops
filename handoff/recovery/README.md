@@ -14,6 +14,8 @@ python3 tools/check_recovery_bundle.py /private/received-bundle
 
 Recovery 서버 명령은 채택한 Valkey 7.2.14 Source/Gate의 `valkey-server`와 맞아야 한다. 이 계약은 특정 Image의 binary 존재나 Engine 채택을 승인하지 않는다. C/D가 승인한 Image가 다른 binary를 요구하면 Recovery Source와 기존 Gate 및 이 인벤토리 계약/시험을 같은 리뷰에서 개정한다. lab의 Valkey 명령·저장소·CA를 그대로 가져오지 않는다. TCP Probe 성공은 TLS/AUTH 성공을 대신하지 않는다.
 
+이 서버 명령 검사는 v1/v2 인벤토리에 모두 적용된다. 이전 `server_command: ["redis-server"]`로 작성한 v1 Bundle이 있으면 현재 검사기는 거부한다. 원본을 보존하고 현재 승인 Source·Manifest·Image와 `valkey-server`에 맞춘 새 Bundle 인벤토리/해시를 작성·재검증해야 한다. schema_version 1 지원이 이전 서버 명령의 호환 수락을 뜻하지 않는다.
+
 독립 사본 수락은 별도다. Controller 밖의 보존 위치/Owner·복호화 Key 확보 경로·새 복원 환경 Identity·CA·도구 가용성·실제 사본 해시를 확인하고, Controller가 없는 조건에서 공급/복원 가능한지 시험한다. 다른 폴더에 같은 Bundle을 놓는 것만으로 독립 사본을 증명하지 않는다. RTO10분·영속 DB RPO30분·Portable Backup15분 요구는 실제 Data 시점/완성 지연·탐지부터 업무 재개 시간으로 검증한다.
 
 **검사 중에는 Bundle을 변경하지 않는다.** 생산자·동기화·복사 작업을 마치고 사본을 고정한 뒤 검사한다. 검사 도중이나 이후 파일·인벤토리를 바꾸면 해당 결과를 재사용하지 않고 고정한 새 사본을 다시 검사한다. 이 도구는 동시 변경 방지나 검사 후 무결성을 보장하지 않는다.
@@ -41,24 +43,6 @@ DB 복원은 [Infra #48](https://github.com/seokpan/seokpan-hybrid-infra/issues/
 
 현재 `restore.sh`는 사본의 최대 나이30분을 실행 전에 거부하지 않는다. 따라서 선택된 사본이 최신이라고 RPO30분을 통과한 것은 아니다. 실제 수행자는 선택 Backup ID의 데이터 시각과 T0를 대조하고30분을 넘으면 RPO PASS로 수락하지 않는다. 복호화·가져오기 실패를 자동 재시도로 덮지 않는다. 독립 사본·복원 Identity·실제 RTO/RPO는 계속 `NOT_VERIFIED`다.
 
-## 2026-10-13 채택한 Recovery 초기 계약
+## 채택한 Recovery 초기 계약
 
-B(정태훈/tjung03)가 대상 `seokpan-recovery`, Valkey 7.2.14와 초기 자원안을 채택했다. Source 계약을 선택한 것으로 실제 Namespace 생성, Image 공급/실행, 연결 성공을 뜻하지 않는다.
-
-| 구성 | CPU requests/limits | 메모리 requests/limits |
-|---|---|---|
-| FE | 25m/250m | 32Mi/64Mi |
-| BE | 100m/500m | 128Mi/256Mi |
-| Valkey | 100m/500m | 512Mi/512Mi |
-
-Valkey의 `maxmemory 384mb`, `dir /data`, 비영속/noeviction 설정은 두 외부 Include 뒤에 고정하며 Gate가 변경·중복을 거부한다. 외부 runtime Include는 여전히 C가 공급한다. maxmemory는 전체 RSS 제한이 아니며 임의 UID의 /data 쓰기·TLS/AUTH·실제 peak/OOM 시험이 필요하다. Engine 이미지 Placeholder, 외부 Secret/CA와 replicas 0 보류는 유지한다. 이미지 태그/보고만으로 7.2.14 binary 실행을 인정하지 않는다.
-
-Image 공급 담당 D는 실제 Valkey 7.2.14 고정 Digest/플랫폼과 `valkey-server` 실행 파일을 확인한다. 현재 Probe는 TCP listener만 확인하고 CLI를 실행하지 않는다. 후속 AUTH 진단은 `valkey-cli --tls`와 Secret으로 공급한 `VALKEYCLI_AUTH`를 사용하며, 호환 `REDISCLI_AUTH`만으로 인증된다고 가정하지 않는다. 비밀번호를 명령 인수에 넣지 않는다. 공급된 이미지에서 실제 TLS/SNI/CA/AUTH PING을 확인하기 전에는 readiness/업무 성공으로 수락하지 않는다.
-
-정상 메모리 예약은 672Mi, limits 합계는 832Mi다. FE 이전 Pod 완전 종료 뒤 BE 한 개만 rolling 교체하면 추가 BE와 512Mi 여유를 포함한 예약은 1312Mi, limits envelope는 1600Mi다. FE 종료 중 Pod가 겹치면 1344/1664Mi이므로 이전 FE 완전 종료를 먼저 확인한다. 이는 초기 예산이며 실제 Node 수용/성능 PASS가 아니다. 격리는 Namespace 이름만으로 증명되지 않고 실제 Context/RBAC/CNI·통신 경계를 확인해야 한다.
-
-담당 경계: B는 Overlay/소비 검사와 App 업무 검증, A는 기반/네트워크 인계, C는 DB 복원·AUTH/CA·외부 runtime 입력/도구, D는 Image/Registry·시험 및 Evidence 조율을 맡는다. 완료한 Run7 FE/BE 공급·Pull을 반복 요청하지 않는다.
-
-최종 Cloud 이관은 Recovery 복원과 별개다. Foundation Apply 뒤에는 C의 중지 전 준비를 진행한다. ROSA Ready와 App 배포 입력 준비 뒤 B가 원본 전체 Writer를 중지하고, C의 최종 dump/import/비교(6)와 계정/거부 시험(7/8), B의 Migration current/Backend 기동·업무 검증(9)까지 중지를 유지한다. 단계6 비교만으로 원본 쓰기를 재개하지 않는다. Cloud 업무 시험 쓰기도 새 쓰기로 취급하며 발생 뒤에는 원본 단순 재개를 복귀로 인정하지 않는다. C는 본인 Infra #44 절차의 끝점을 이 기준에 맞춰 정합화한다.
-
-초기 공동 시간 예산은 준비30분(쓰기 중지 밖), 중지75분과 종료 여유15분을 합한 120분이다. 실측/날짜 확정이 아니며 ROSA 설치 시간과 실패 시 실제 복귀 시간은 별도다. 보호 조건(Runtime 2000ms 포함)을 완화하지 않는다.
+Namespace·Engine·자원표·메모리 산식·CLI/AUTH·담당 경계와 이관 순서는 [App의 채택 계약](../../apps/README.md#2026-10-13-채택한-recovery-초기-계약)을 기준으로 한다. 이 문서는 Bundle 인벤토리·보호 입력·독립 사본 검사 조건을 설명한다.

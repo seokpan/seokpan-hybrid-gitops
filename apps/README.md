@@ -47,7 +47,7 @@ lab 활성화는 승인 FE/BE Image를 Kustomize `images.digest`로 고정하고
 
 **현재 엔진 선택과 보류 선언의 차이:** Recovery 목표는 `seokpan-recovery`의 Valkey 7.2.14이며 초기 자원/메모리 계약은 아래 채택안이다. 아래 `valkey-server`·TCP Probe·입력 대기 Image/Volume은 기존 held Source의 인터페이스 설명이지 Valkey 기동/호환 수락 결과가 아니다. 실제 활성화 전 B/C/D는 승인 Image의 실행 파일, TLS/AUTH PING Probe, 임의 UID·쓰기/저장 정책을 선택한 뒤 `redis.yaml`·`redis.conf`·`tools/render_release.py`·관련 `test_*manifests.py`를 함께 개정·검증한다. C/A의 미확정 Volume·Digest를 추측해서 채우거나 검사 우회로 활성화하지 않는다.
 
-`redis.yaml`의 논리 이름은 `recovery-redis`이며 격리 Namespace 안의 Headless `ClusterIP` Service만 선언한다. Backend의 `rediss://recovery-redis.<격리 Namespace>.svc:6379/0`과 예상 Host를 함께 바꿔 같은 대상을 검증한다. 체크인 Namespace `recovery-input-required`는 승인된 실제 Namespace가 아니다. 다른 환경·1차 Redis 주소를 연결하거나 `FLUSHALL`로 초기화하는 절차는 넣지 않았다.
+`redis.yaml`의 논리 이름은 `recovery-redis`이며 격리 Namespace 안의 Headless `ClusterIP` Service만 선언한다. Backend의 `rediss://recovery-redis.<격리 Namespace>.svc:6379/0`과 예상 Host를 함께 바꿔 같은 대상을 검증한다. 체크인 Namespace `seokpan-recovery`는 채택한 Recovery 대상이다. 실제 Namespace 생성·격리·권한 수락은 별도 실행 확인이 필요하다. 다른 환경·1차 Redis 주소를 연결하거나 `FLUSHALL`로 초기화하는 절차는 넣지 않았다.
 
 `redis.conf`는 평문 Port를 `0`으로 끄고 TLS `6379`, 서버 인증서·Key·CA 파일, TLS 1.2/1.3을 선언한다. App은 Client Certificate를 공급하지 않으므로 `tls-auth-clients no`로 맞추고 별도 AUTH를 사용한다. 이는 무인증 허용이 아니다. C가 공급한 보호 AUTH 설정의 실제 `requirepass`가 비어 있지 않고 Backend의 `backend-redis-runtime` Token과 같은 승인 개정인지 실행 전에 검증해야 한다. 비민감 ConfigMap에 Password/ACL 값은 넣지 않으며 Redis 실행 인자는 설정 파일 경로뿐이다. Source 도구는 실제 Secret 내용을 읽거나 인증 성공을 확인하지 않는다.
 
@@ -131,7 +131,7 @@ Valkey의 `maxmemory 384mb`, `dir /data`, 비영속/noeviction 설정은 두 외
 
 Image 공급 담당 D는 실제 Valkey 7.2.14 고정 Digest/플랫폼과 `valkey-server` 실행 파일을 확인한다. 현재 Probe는 TCP listener만 확인하고 CLI를 실행하지 않는다. 후속 AUTH 진단은 `valkey-cli --tls`와 Secret으로 공급한 `VALKEYCLI_AUTH`를 사용하며, 호환 `REDISCLI_AUTH`만으로 인증된다고 가정하지 않는다. 비밀번호를 명령 인수에 넣지 않는다. 공급된 이미지에서 실제 TLS/SNI/CA/AUTH PING을 확인하기 전에는 readiness/업무 성공으로 수락하지 않는다.
 
-정상 메모리 예약은 672Mi, limits 합계는 832Mi다. FE 이전 Pod 완전 종료 뒤 BE 한 개만 rolling 교체하면 추가 BE와 512Mi 여유를 포함한 예약은 1312Mi, limits envelope는 1600Mi다. FE 종료 중 Pod가 겹치면 1344/1664Mi이므로 이전 FE 완전 종료를 먼저 확인한다. 이는 초기 예산이며 실제 Node 수용/성능 PASS가 아니다. 격리는 Namespace 이름만으로 증명되지 않고 실제 Context/RBAC/CNI·통신 경계를 확인해야 한다.
+정상 메모리 예약은 672Mi, limits 합계는 832Mi다. FE 이전 Pod 완전 종료 뒤 BE 한 개만 rolling 교체하면 추가 BE와 512Mi 여유를 포함한 예약은 1312Mi, limits envelope는 1600Mi다. FE 종료 중 Pod가 겹치면 1344/1664Mi이므로 이전 FE 완전 종료를 먼저 확인한다. 이는 초기 예산이며 실제 Node 수용/성능 PASS가 아니다. 실제 활성화 전에는 대상 Namespace의 ResourceQuota/LimitRange, Node allocatable·현재 예약량·Pod 슬롯·스케줄링 조건을 확인하고 이 초기 예산과 함께 수락한다. 그 실행 확인 결과는 아직 없다. 격리는 Namespace 이름만으로 증명되지 않고 실제 Context/RBAC/CNI·통신 경계를 확인해야 한다.
 
 담당 경계: B는 Overlay/소비 검사와 App 업무 검증, A는 기반/네트워크 인계, C는 DB 복원·AUTH/CA·외부 runtime 입력/도구, D는 Image/Registry·시험 및 Evidence 조율을 맡는다. 완료한 Run7 FE/BE 공급·Pull을 반복 요청하지 않는다.
 
