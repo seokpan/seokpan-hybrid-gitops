@@ -8,10 +8,10 @@ resources:
 images:
   - name: seokpan-backend
     newName: harbor.seokpan.soldesk.store/seokpan-hybrid/backend
-    digest: sha256:41a442deba498b0343e84fbc0a89c417afa018d32d64e3ee2eab02a12ba8541f
+    digest: sha256:733f52a6f5a53c31e792cbe1d254221ff8ff86828e8c3afdc65d207e2e5fb18d
   - name: seokpan-frontend
     newName: harbor.seokpan.soldesk.store/seokpan-hybrid/frontend
-    digest: sha256:25e26db371194d34a5a4d1f81603786e5eab8aac02a41db06da8b9b8e94818ee
+    digest: sha256:7068a36f55427639b7b7bf8a9c5795689b891e7ec334bfd306d8cd03c5f049ff
   - name: seokpan-recovery-redis
     newName: recovery-harbor-input-required.invalid/redis
     newTag: INPUT_REQUIRED
