@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "record_kind": "candidate",
+  "completeness": "INCOMPLETE",
+  "release_id": "rel-recovery-20261014T034648Z-c2dad254cc40-4809c8fc",
+  "source": {
+    "app_sha": "c2dad254cc407431092691f9ea5892f8324f1520",
+    "infra_sha": null
+  },
+  "images": {
+    "frontend": {
+      "ecr_digest": "sha256:7068a36f55427639b7b7bf8a9c5795689b891e7ec334bfd306d8cd03c5f049ff",
+      "harbor_digest": "sha256:7068a36f55427639b7b7bf8a9c5795689b891e7ec334bfd306d8cd03c5f049ff",
+      "platform": "linux/amd64"
+    },
+    "backend": {
+      "ecr_digest": "sha256:733f52a6f5a53c31e792cbe1d254221ff8ff86828e8c3afdc65d207e2e5fb18d",
+      "harbor_digest": "sha256:733f52a6f5a53c31e792cbe1d254221ff8ff86828e8c3afdc65d207e2e5fb18d",
+      "platform": "linux/amd64"
+    }
+  },
+  "revisions": {
+    "schema": null,
+    "config": null,
+    "secret": null,
+    "tool_manifest": null,
+    "recovery_bundle": null
+  },
+  "review_refs": [],
+  "verification": {
+    "render": "NOT RUN",
+    "deployment": "NOT RUN",
+    "acceptance": "NOT RUN"
+  },
+  "missing_inputs": [
+    "SOURCE_COMMITS",
+    "CONFIGURATION_REVISIONS",
+    "RENDER_AND_REVIEW"
+  ]
+}
