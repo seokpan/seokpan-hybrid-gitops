@@ -12,10 +12,10 @@ images:
   # from metadata ecr.final_digest. Never borrow Harbor digests or CI login tokens.
   - name: seokpan-backend
     newName: 847835841591.dkr.ecr.ap-northeast-2.amazonaws.com/seokpan-fnd-backend
-    digest: INPUT_REQUIRED
+    digest: sha256:733f52a6f5a53c31e792cbe1d254221ff8ff86828e8c3afdc65d207e2e5fb18d
   - name: seokpan-frontend
     newName: 847835841591.dkr.ecr.ap-northeast-2.amazonaws.com/seokpan-fnd-frontend
-    digest: INPUT_REQUIRED
+    digest: sha256:7068a36f55427639b7b7bf8a9c5795689b891e7ec334bfd306d8cd03c5f049ff
 # envFrom is read on Pod startup: keep the generated content hash so a
 # reviewed runtime configuration change also changes the Pod template ref.
 configMapGenerator:
