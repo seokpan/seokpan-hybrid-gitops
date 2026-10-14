@@ -16,6 +16,7 @@ images:
     newName: recovery-harbor-input-required.invalid/redis
     newTag: INPUT_REQUIRED
 patches:
+  - path: release-source.yaml
   - path: resources.yaml
   - target: {kind: Deployment}
     path: registry-pull.yaml

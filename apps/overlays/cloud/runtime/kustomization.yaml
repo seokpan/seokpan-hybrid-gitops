@@ -16,6 +16,8 @@ images:
   - name: seokpan-frontend
     newName: 847835841591.dkr.ecr.ap-northeast-2.amazonaws.com/seokpan-fnd-frontend
     digest: sha256:7068a36f55427639b7b7bf8a9c5795689b891e7ec334bfd306d8cd03c5f049ff
+patches:
+  - path: release-source.yaml
 # envFrom is read on Pod startup: keep the generated content hash so a
 # reviewed runtime configuration change also changes the Pod template ref.
 configMapGenerator:
