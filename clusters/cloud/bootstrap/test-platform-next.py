@@ -28,6 +28,20 @@ class Boundaries(unittest.TestCase):
         self.assertEqual(binding['subjects'], [{'kind': 'ServiceAccount', 'name': SA,
                                                'namespace': 'openshift-gitops'}])
 
+    def test_custom_host_create_only_in_namespace_role(self):
+        role = m.controller_role(SA)[0]
+        rule = next(r for r in role['rules'] if r['resources'] == ['routes/custom-host'])
+        self.assertEqual(rule, {'apiGroups': ['route.openshift.io'],
+                               'resources': ['routes/custom-host'], 'verbs': ['create']})
+
+    def test_custom_host_auth_uses_explicit_subresource(self):
+        with tempfile.TemporaryDirectory() as path, patch.object(m.subprocess, 'run') as run:
+            run.return_value = subprocess.CompletedProcess([], 0, 'yes\n', '')
+            self.assertTrue(m.Runner(Path(path)).can(SA, 'create', 'routes.route.openshift.io/custom-host'))
+            args = run.call_args.args[0]
+            self.assertIn('routes.route.openshift.io', args)
+            self.assertIn('--subresource=custom-host', args)
+
     def test_unknown_sa_refused(self):
         with self.assertRaises(m.Stop):
             m.controller_role('other-controller')
@@ -123,3 +137,4 @@ class Boundaries(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
