@@ -1,0 +1,52 @@
+{
+  "apiVersion": "argoproj.io/v1alpha1",
+  "kind": "AppProject",
+  "metadata": {
+    "name": "seokpan-cloud-app",
+    "namespace": "openshift-gitops",
+    "annotations": {
+      "seokpan.io/release-state": "source-candidate-no-runtime-approval",
+      "argocd.argoproj.io/sync-options": "Prune=false,Delete=false"
+    }
+  },
+  "spec": {
+    "sourceRepos": [
+      "https://github.com/seokpan/seokpan-hybrid-gitops.git"
+    ],
+    "destinations": [
+      {
+        "server": "https://kubernetes.default.svc",
+        "namespace": "seokpan-cloud"
+      }
+    ],
+    "clusterResourceWhitelist": [],
+    "clusterResourceBlacklist": [
+      {
+        "group": "*",
+        "kind": "*"
+      }
+    ],
+    "namespaceResourceWhitelist": [
+      {
+        "group": "apps",
+        "kind": "Deployment"
+      },
+      {
+        "group": "",
+        "kind": "Service"
+      },
+      {
+        "group": "",
+        "kind": "ConfigMap"
+      },
+      {
+        "group": "route.openshift.io",
+        "kind": "Route"
+      },
+      {
+        "group": "policy",
+        "kind": "PodDisruptionBudget"
+      }
+    ]
+  }
+}
