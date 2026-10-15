@@ -1,0 +1,25 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-15
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: seokpan-cloud-monitoring
+  namespace: openshift-gitops              # 실제 Argo Namespace 확인 후 확정
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  sourceRepos:
+    - https://github.com/seokpan/seokpan-hybrid-gitops.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: seokpan-cloud
+  clusterResourceWhitelist: []
+  clusterResourceBlacklist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+    - group: monitoring.coreos.com
+      kind: PrometheusRule
+    - group: networking.k8s.io
+      kind: NetworkPolicy

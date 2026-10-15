@@ -1,0 +1,7 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-15
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - servicemonitor-backend.yaml
+  - prometheusrule-availability.yaml
+  - networkpolicy-uwm-to-backend.yaml
