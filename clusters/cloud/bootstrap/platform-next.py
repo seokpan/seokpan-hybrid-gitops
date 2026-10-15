@@ -37,7 +37,8 @@ def controller_role(sa):
                 {'apiGroups': [g], 'resources': [r], 'verbs': WRITE_VERBS}
                 for g, r in WRITES] + [
                 {'apiGroups': [g], 'resources': [r], 'verbs': READ_VERBS}
-                for g, r in READS]}
+                for g, r in READS] + [{'apiGroups': ['route.openshift.io'],
+                'resources': ['routes/custom-host'], 'verbs': ['create']}]}
     binding = {'apiVersion': role['apiVersion'], 'kind': 'RoleBinding',
                'metadata': metadata, 'roleRef': {'apiGroup': 'rbac.authorization.k8s.io',
                'kind': 'Role', 'name': ROLE},
@@ -120,11 +121,14 @@ class Runner:
 
     def can(self, sa, verb, resource):
         self.count += 1
-        args = ['oc', 'auth', 'can-i', verb, resource, '-n', NS,
+        parts = resource.split('/', 1)
+        args = ['oc', 'auth', 'can-i', verb, parts[0], '-n', NS,
                 '--as=system:serviceaccount:' + ARGO + ':' + sa,
                 '--as-group=system:serviceaccounts',
                 '--as-group=system:serviceaccounts:' + ARGO,
                 '--as-group=system:authenticated', '--request-timeout=25s']
+        if len(parts) == 2:
+            args.append('--subresource=' + parts[1])
         result = subprocess.run(args, capture_output=True, text=True, timeout=45)
         (self.folder / f'{self.count:03d}.auth.stderr').write_text(result.stderr)
         value = result.stdout.strip()
@@ -190,6 +194,7 @@ def main():
         phase = 'CONTROLLER_NAMESPACE_AUTHORIZATION'
         checks = [(v, r + ('.' + g if g else ''))
                   for g, r in WRITES + READS for v in (WRITE_VERBS if (g, r) in WRITES else READ_VERBS)]
+        checks.append(('create', 'routes.route.openshift.io/custom-host'))
         missing = [(v, r) for v, r in checks if not runner.can(sa, v, r)]
         objects = (controller_role(sa) if missing else []) + policies
         new = []
@@ -266,3 +271,4 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+

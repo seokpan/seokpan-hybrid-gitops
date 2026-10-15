@@ -10,7 +10,7 @@ Controller 실제 결과에서 프로젝트 생성과 Router·Controller 정보 
 
 ## Namespace 배포 권한·Ingress 후속
 
-`platform-next.py ROOT PROJECT_RESULT --apply`는 위 성공 결과를 소비한다. 현재 접속 대상, Router·Controller, 실행 중 Deployment가 없는 보류 상태를 확인한다. 앱 종류의 get/list/watch/create/update/patch와 상태 조회에 필요한 Controller 권한45개를 실제 impersonation으로 조회한다. 부족할 때만 Cloud Namespace의 Role/RoleBinding 한 쌍을 추가한다. 새 Role은 Secret·Pod 생성/exec·RBAC 변경·delete·Cluster 권한을 부여하지 않는다. 기존의 다른 권한은 제거하지 않으며 별도 조회 결과로 남긴다.
+`platform-next.py ROOT PROJECT_RESULT --apply`는 위 성공 결과를 소비한다. 현재 접속 대상, Router·Controller, 실행 중 Deployment가 없는 보류 상태를 확인한다. 앱 종류의 get/list/watch/create/update/patch와 상태 조회에 필요한 Controller 권한46개(기존45개와 Route custom-host create)를 실제 impersonation으로 조회한다. 부족할 때만 Cloud Namespace의 Role/RoleBinding 한 쌍을 추가한다. 새 Role은 Secret·Pod 생성/exec·RBAC 변경·delete·Cluster 권한을 부여하지 않는다. 기존의 다른 권한은 제거하지 않으며 별도 조회 결과로 남긴다.
 
 Ingress는 관측 Router Namespace와 Pod selector를 같은 peer의 AND 조건으로 묶어 FE8080·BE8000을 허용하고, 같은 Namespace의 FE→BE8000 및 기본 ingress 차단까지 네 정책이다. Egress는 제한하지 않는다. 기존 정책의 이름/범위가 다르면 합산 효과를 검토하기 전 중단한다. Router/FE의 실제 허용·차단 통신과 Health/모니터링 경로는 앱 수락 단계에서 별도로 시험해야 한다.
 
@@ -19,5 +19,34 @@ Ingress는 관측 Router Namespace와 Pod selector를 같은 peer의 AND 조건�
 ## 검증과 남은 조건
 
 - AppProject: 기존 생성 도구 일치, Kustomize 단일 객체, Bash 문법과 Controller 등록 실제 통과.
-- 후속 도구: 최소 Role·Router AND 조건·허용 포트·Ingress-only·기존 범위 충돌·API 빈 배열 표현·권한 조회 오류 구분17개 오프라인 검사 통과. 실제 후속 적용은 아직 미실행이다.
-- 개인 Argo SSO, 실효 권한의 허용/거부와 실제 정책 통신 수락, 외부 통신 제한, 최종 Data 이관/서비스 계정·Pool·Migration·앱 업무/전환은 별도 잔여다.
+- 후속 도구: Controller 실제 결과에서 Role/RoleBinding과 Ingress 정책4개 생성·기존 필수 권한45개 통과. 신규 custom-host create 권한은 별도 보완 대상으로 확인됐다. 최소 Role/Router/권한 조회 회귀19개와 custom-host 복구·UID/버전 경쟁 상태 회귀11개를 CI에서 직접 실행한다.
+- 개인 OpenShift·Argo 로그인 화면은 성공으로 수신했다. 현재 세션의 Argo 허용/거부 정책과 실제 네트워크 통신 수락, 외부 통신 제한, 최종 Data 이관/서비스 계정·Pool·Migration·앱 업무/전환은 별도 잔여다.
+
+## 기존 클러스터의 Route 권한 보완
+
+실제 조회에서 Argo Controller의 `routes/custom-host` create가 거부됐다. 명시적인 host를 가진 Route의
+Sync 전에 이 권한을 Cloud Namespace에만 보완한다. 앞으로 새로 생성하는 Controller Role에는 이 규칙을 포함한다.
+
+`route-custom-host.py ROOT --apply`는 이미 생성된 `seokpan-cloud-application-controller` Role과
+Binding·Controller SA·현재 Cluster API를 대조한다. 원래 규칙10개가 정확히 같은 Role에만
+`route.openshift.io / routes/custom-host / create` 한 규칙을 추가한다. UID·resourceVersion·기존 규칙에
+JSON Patch test를 걸고 서버 dry-run 뒤 한 번 적용한다. 오류·부분 응답·권한 반영 지연 시 자동 재시도하지 않는다.
+이름/소유권/기존 규칙/Binding이 다르면 중단한다. 기존45개 권한, Ingress 설정·설치·로그인 검사를 다시 실행하지 않는다.
+새 규칙이 이미 정확히 있으면 쓰기 없이 새 권한만 확인한다. 이 도구와 같은 개정의 `platform-next.py`를 같은 폴더에 둔다.
+
+기존 Secret get·RoleBinding create의 출처는
+`openshift-gitops-openshift-gitops-argocd-application-controller` ClusterRoleBinding과 동명 ClusterRole로 확인됐다.
+새 Namespace Role에서 부여한 권한이 아니다. 전체 권한이 최소화됐다고 판단하지 않으며,
+Operator 설정·다른 소비자 영향 확인 없이 기본 ClusterRole/Binding을 직접 삭제하거나 축소하지 않는다.
+
+## 객체 소유권·삭제 보호와 모니터링
+
+AppProject는 별도 bootstrap으로 등록한다. AppProject의 `Prune=false,Delete=false` 주석은
+Argo가 해당 AppProject를 관리할 때의 의도를 표시하며, 현재 수동 등록 객체에 대한 삭제 방어를 보장하지 않는다.
+직접 Kubernetes 삭제·다른 Controller의 삭제까지 차단하는 설정도 아니다.
+
+모니터링 선언은 별도 경로·Application/AppProject로 분리한다. 현재 앱 AppProject에
+ServiceMonitor·PrometheusRule·NetworkPolicy를 추가하지 않는다. 모니터링 전용 NP는 기본 차단을
+삭제하지 않고 실제 UWM Namespace/Pod selector와 실제 metrics 포트만 허용하는 추가 정책으로 관리한다.
+ServiceMonitor와 PrometheusRule은 선언 Sync와 실제 target UP/규칙 평가·알림 수락을 구분한다.
+모니터링 객체와 기존 앱/플랫폼 객체를 두 Application이 중복 소유하지 않도록 해야 한다.
