@@ -1,0 +1,13 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-15
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seokpan-backend
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend       # Service 라벨 (apps/base/services.yaml)
+  endpoints:
+    - port: http
+      path: /metrics                        # backend/src/seokpan/metrics.py 확인
+      interval: 30s

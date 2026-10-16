@@ -1,0 +1,37 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-15
+# 임계값은 초기 후보이며 정상 Baseline 측정 후 조정(02 §13.2)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: seokpan-app-availability
+spec:
+  groups:
+    - name: seokpan.app.availability
+      rules:
+        - alert: SeokpanReplicasUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{deployment=~"backend|frontend"}
+              < kube_deployment_spec_replicas{deployment=~"backend|frontend"}
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.deployment }} 가용 Replica 부족"
+        - alert: SeokpanContainerRestarting
+          expr: increase(kube_pod_container_status_restarts_total[10m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.pod }} 재시작 감지"
+    - name: seokpan.app.http
+      rules:
+        - alert: SeokpanHttp5xxRatioHigh
+          # 초기 후보. 정상 Baseline 측정 후 임계값 조정(02 §13.2)
+          expr: |
+            sum(rate(seokpan_http_requests_total{status=~"5.."}[5m]))
+              / sum(rate(seokpan_http_requests_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Backend 5xx 비율 5% 초과"

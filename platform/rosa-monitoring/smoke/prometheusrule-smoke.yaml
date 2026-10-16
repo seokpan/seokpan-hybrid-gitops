@@ -1,0 +1,15 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-15
+# Alert 경로 검증용 임시 규칙. Application 미포함, Evidence 확보 후 삭제
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: seokpan-monitoring-smoke
+  namespace: seokpan-cloud
+spec:
+  groups:
+    - name: seokpan.smoke
+      rules:
+        - alert: SeokpanMonitoringSmoke
+          expr: vector(1)
+          labels:
+            severity: none

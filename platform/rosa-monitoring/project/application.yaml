@@ -1,0 +1,22 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-15
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: seokpan-cloud-monitoring
+  namespace: openshift-gitops              # AppProject와 동일
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  project: seokpan-cloud-monitoring
+  source:
+    repoURL: https://github.com/seokpan/seokpan-hybrid-gitops.git
+    targetRevision: GITOPS_REVISION_INPUT_REQUIRED   # merge 후 40자리 개정으로 고정
+    path: platform/rosa-monitoring/app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: seokpan-cloud
+  syncPolicy:
+    syncOptions:
+      - FailOnSharedResource=true
+      - Prune=false
+      - Delete=false
