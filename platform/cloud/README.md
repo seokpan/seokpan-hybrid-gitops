@@ -1,5 +1,7 @@
 # Cloud 플랫폼 계약과 관리 조회 권한 후보
 
+> **도구 범위와 완료 결과 — 2026-10-16:** 아래 계약 생성기는 오프라인 후보 도구다. 별도 실행의 Cloud AppProject·Namespace Controller 권한45개·Ingress4개와 지정 Route host 권한1개 보완은 [#52](https://github.com/seokpan/seokpan-hybrid-gitops/pull/52)·[#53](https://github.com/seokpan/seokpan-hybrid-gitops/pull/53)에서 완료했다. 고정5294e77 보류 Application 등록·객체8/8/source 비교와 정상 관리/한정 모니터링 수락은 [B 완결 결과 문서 PR](https://github.com/seokpan/seokpan-hybrid-docs/pull/134)에 연결한다. 후보 생성기의 비변경 성질과 별도 실제 적용 결과를 구분하며 통신·전체 최소권한·앱 Sync/기동 완료로 확대하지 않는다.
+
 실제 Namespace·Argo Controller·Ingress Router 인계가 없는 상태에서도 검토할 수 있는 Source 도구다. `contract.fixture.json`은 합성 시험 전용이며 실제 Cluster 입력이나 승인 자료가 아니다. 기본 App Overlay 및 어떤 Root Kustomization에도 연결하지 않았다. Namespace를 실제 생성하거나 Application을 등록하지 않는다.
 
 ```bash
