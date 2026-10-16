@@ -21,6 +21,11 @@ spec:
       imagePullSecrets: [{name: recovery-harbor-pull}]
       securityContext:
         seccompProfile: {type: RuntimeDefault}
+        # Recovery-only execution UID for the arbitrary-UID contract; it is not
+        # the image-embedded UID. No root initContainer or chmod 777 workaround.
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: redis
           image: seokpan-recovery-redis:INPUT_REQUIRED

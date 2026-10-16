@@ -19,6 +19,8 @@ from preflight_lab_valkey import transport_directives
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Approved Recovery-only Valkey execution UID/GID/fsGroup (arbitrary-UID contract, not the image UID).
+RECOVERY_REDIS_EXECUTION_ID = 10001
 
 
 def app_manifest_blockers(rendered, environment):
@@ -210,7 +212,9 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         if pod.get("automountServiceAccountToken") is not False or \
                 pod.get("enableServiceLinks") is not False or \
                 pod.get("securityContext", {}).get("seccompProfile") != {"type": "RuntimeDefault"} or \
-                any(k in context for context in (security, pod.get("securityContext", {}))
+                any(k in security for k in ("runAsUser", "runAsGroup", "fsGroup")) or \
+                any(type(pod.get("securityContext", {}).get(k)) is not int
+                    or pod["securityContext"][k] != RECOVERY_REDIS_EXECUTION_ID
                     for k in ("runAsUser", "runAsGroup", "fsGroup")) or \
                 security.get("runAsNonRoot") is not True or \
                 security.get("allowPrivilegeEscalation") is not False or \

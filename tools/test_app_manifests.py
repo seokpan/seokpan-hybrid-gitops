@@ -174,8 +174,16 @@ class AppManifestBoundaries(unittest.TestCase):
                 self.assertFalse(pod["enableServiceLinks"])
                 self.assertEqual(pod["securityContext"]["seccompProfile"]["type"],
                                  "RuntimeDefault")
-                for context in [pod["securityContext"],
-                                *(c["securityContext"] for c in pod["containers"])]:
+                recovery_redis = env == "recovery" and dep["metadata"]["name"] == "recovery-redis"
+                if recovery_redis:
+                    # Approved Recovery-only execution ID; never propagated elsewhere.
+                    for key in ("runAsUser", "runAsGroup", "fsGroup"):
+                        self.assertEqual(pod["securityContext"][key], 10001)
+                    contexts = [c["securityContext"] for c in pod["containers"]]
+                else:
+                    contexts = [pod["securityContext"],
+                                *(c["securityContext"] for c in pod["containers"])]
+                for context in contexts:
                     self.assertFalse({"runAsUser", "runAsGroup", "fsGroup"} & context.keys())
                 for c in pod["containers"]:
                     self.assertTrue(c["securityContext"]["runAsNonRoot"])
@@ -768,6 +776,10 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
             ("mutable local image", lambda rs: redis_container(rs).update(image=self.registry + "/redis:latest")),
             ("outside local Harbor", lambda rs: redis_container(rs).update(image="public.example.test/redis@sha256:" + "a" * 64)),
             ("fixed UID", lambda rs: redis_container(rs)["securityContext"].update(runAsUser=1000)),
+            ("container fixed UID", lambda rs: redis_container(rs)["securityContext"].update(runAsUser=10001)),
+            ("wrong pod UID", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].update(runAsUser=1000)),
+            ("wrong pod fsGroup", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].update(fsGroup=0)),
+            ("missing pod fsGroup", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].pop("fsGroup")),
         ]
         for label, mutate in mutations:
             with self.subTest(boundary=label):

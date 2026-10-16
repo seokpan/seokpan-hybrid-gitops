@@ -5,6 +5,7 @@ namespace: seokpan-recovery
 resources:
   - ../../base
   - redis.yaml
+  - networkpolicy.yaml
 images:
   - name: seokpan-backend
     newName: harbor.seokpan.soldesk.store/seokpan-hybrid/backend
