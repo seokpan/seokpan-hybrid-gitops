@@ -1,0 +1,14 @@
+# 작성자: 최유준
+# 작성 날짜: 2026/10/16
+# Recovery App + 별도 Migration 후보를 한 번에 합성해 backend-config hash/Image digest 변환을 공통으로 받는다.
+# 이 합성 출력은 직접 Apply하지 않는다. tools/split_recovery_render.py로 App/Job 산출물을 분리해 각각 검토한다.
+# images는 apps/overlays/recovery와 같아야 한다(어긋나면 check_migration_manifest가 Image 불일치로 거부).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../apps/overlays/recovery
+  - ../migration
+images:
+  - name: seokpan-backend
+    newName: harbor.seokpan.soldesk.store/seokpan-hybrid/backend
+    digest: sha256:733f52a6f5a53c31e792cbe1d254221ff8ff86828e8c3afdc65d207e2e5fb18d

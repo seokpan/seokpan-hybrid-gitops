@@ -1,0 +1,61 @@
+# 작성자: 최유준
+# 작성 날짜: 2026/10/16
+# Recovery Migration `current`(읽기 전용) 후보. App Sync에 포함하지 않는 별도 operations Job.
+# 논리 참조(backend-config, seokpan-backend)는 operations/recovery/compose 합성 빌드에서 실제 hash 이름·digest로 변환된다.
+# hash 수동 고정·suffixHash 해제 금지. 변환 뒤 tools/split_recovery_render.py로 App/Job 산출물을 분리한다.
+# 실행 Deadline·Secret/CA 공급·실행창은 B/C 확정 전이며 suspend=true를 유지한다. upgrade-head는 Schema 대조 전 금지.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seokpan-migration-recovery
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    seokpan.io/release-state: input-required-no-runtime-validation
+spec:
+  suspend: true
+  activeDeadlineSeconds: 300   # `current` 확인용 초기 상한. 최종 Deadline은 B/C 수락값으로 교체
+  parallelism: 1
+  completions: 1
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: seokpan-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets: [{name: recovery-harbor-pull}]
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migration
+          image: seokpan-backend:INPUT_REQUIRED
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: [seokpan-migration-gate]
+          args: [current, --expect-host, "192.168.54.60", --expect-port, "3306", --expect-database, stone_game]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          envFrom:
+            - configMapRef: {name: backend-config}
+          env:
+            - name: SEOKPAN_MIGRATION_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: backend-db-migration, key: SEOKPAN_MIGRATION_DATABASE_URL}}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: database-ca, mountPath: /etc/seokpan/database-ca, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: database-ca
+          configMap:
+            name: backend-database-ca
+            items: [{key: ca.crt, path: ca.crt}]

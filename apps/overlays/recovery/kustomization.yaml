@@ -6,6 +6,7 @@ resources:
   - ../../base
   - redis.yaml
   - networkpolicy.yaml
+  - entry.yaml
 images:
   - name: seokpan-backend
     newName: harbor.seokpan.soldesk.store/seokpan-hybrid/backend

@@ -2,7 +2,7 @@ KUSTOMIZE ?= kustomize
 PYTHON ?= python3
 ENVIRONMENT ?= lab
 
-.PHONY: preview release-manifest preflight-lab-valkey migration-source-check test
+.PHONY: preview release-manifest preflight-lab-valkey migration-source-check recovery-split test
 
 # Diagnostic preview only. Checked-in overlays remain input-required drafts.
 preview:
@@ -21,6 +21,11 @@ preflight-lab-valkey:
 migration-source-check:
 	@test -n "$(APP_MANIFEST)" -a -n "$(MIGRATION_MANIFEST)" -a -n "$(MIGRATION_DEADLINE_SECONDS)" || (echo 'APP_MANIFEST, MIGRATION_MANIFEST and MIGRATION_DEADLINE_SECONDS are required' >&2; exit 2)
 	$(PYTHON) tools/check_migration_manifest.py --app-manifest "$(APP_MANIFEST)" --job-manifest "$(MIGRATION_MANIFEST)" --reviewed-deadline-seconds "$(MIGRATION_DEADLINE_SECONDS)"
+
+# Common Recovery composition -> separate App / Migration Job / Job NetworkPolicy drafts. No Apply/Sync/cluster call.
+recovery-split:
+	@test -n "$(APP_OUTPUT)" -a -n "$(JOB_OUTPUT)" -a -n "$(POLICY_OUTPUT)" || (echo 'APP_OUTPUT, JOB_OUTPUT and POLICY_OUTPUT are required' >&2; exit 2)
+	$(PYTHON) tools/split_recovery_render.py --kustomize "$(KUSTOMIZE)" --app-output "$(APP_OUTPUT)" --job-output "$(JOB_OUTPUT)" --policy-output "$(POLICY_OUTPUT)"
 
 test:
 	KUSTOMIZE="$(KUSTOMIZE)" $(PYTHON) -m unittest discover -s tools -p 'test_*_manifests.py' -v
