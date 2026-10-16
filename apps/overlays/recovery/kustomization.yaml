@@ -14,8 +14,10 @@ images:
     newName: harbor.seokpan.soldesk.store/seokpan-hybrid/frontend
     digest: sha256:7068a36f55427639b7b7bf8a9c5795689b891e7ec334bfd306d8cd03c5f049ff
   - name: seokpan-recovery-redis
-    newName: recovery-harbor-input-required.invalid/redis
-    newTag: INPUT_REQUIRED
+    newName: harbor.seokpan.soldesk.store/seokpan-hybrid/valkey
+    # Valkey 7.2.14 Index copied from docker.io with the digest preserved (#10).
+    # Supplying the Digest is not evidence of Pull, CA trust or engine start.
+    digest: sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e
 patches:
   - path: release-source.yaml
   - path: resources.yaml
