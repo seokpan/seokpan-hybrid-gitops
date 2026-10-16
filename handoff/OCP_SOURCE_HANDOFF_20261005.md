@@ -1,5 +1,7 @@
 # OCP Source 인계 카드 — 병합 후 다음 실행 (2026-10-05, Image 입력 2026-10-06 갱신)
 
+> **기록 시점과 B의 완료 수락 — 2026-10-16:** 아래 입력/Case 표는 각 작성일의 인계 기록이다. 이후 실제 OCP Run7 교체·Ready/이전 Pod 종료·3클라이언트 기능과 B03 두 해상도/PNG 수락은 [App #4](https://github.com/seokpan/seokpan-hybrid-app/issues/4#issuecomment-6145407122)·[완결 결과 문서 PR](https://github.com/seokpan/seokpan-hybrid-docs/pull/134)에 연결했다. 당시 `NOT RUN`을 현재 미실행으로 해석하거나 성공한 실행을 반복하지 않는다. Cloud/Recovery·공식 다중 Pod/장애의 원 미완료 조건은 그대로다.
+
 **목적:** 병합된 App와 GitOps 선언을 D의 실제 OCP 배포와 C의 Data 검토에 연결한다. 이 카드는 Source 제출·입력 수신·실제 실행을 따로 표시한다. 상세 절차는 [OCP 최초 배포 안내](OCP_FIRST_DEPLOYMENT.md), B 원본은 [GitOps #10](https://github.com/seokpan/seokpan-hybrid-gitops/issues/10), 개인 상위는 [Docs #21](https://github.com/seokpan/seokpan-hybrid-docs/issues/21)이다.
 
 <a id="현재-후속--2026-10-06-registry-경로-미확보"></a>
@@ -124,7 +126,7 @@ images:
 
 `apps/base/backend.yaml`·`frontend.yaml`는 `replicas: 0`이다. 이번 Harbor Image 수신 뒤에도 나머지 lab/Data/Pull/Owner 입력이 대기 중이라는 뜻이며, 이 상태의 Synced를 실행 성공으로 세지 않는다. 활성화는 승인 Digest/설정·같은 Image의 Migration·필요 Schema를 대조한 별도 개정으로 만들고 `make release-manifest` 입력 검사를 통과한 뒤 최초 수동 Sync한다.
 
-## 5. 실제 시험 Case — 기대와 실제를 따로 쓰기
+## 5. 작성 당시 시험 Case — 과거 기대·미실행 기록
 
 | Case | 기대·확인할 조건 | 이번 실제 결과 |
 |---|---|---|

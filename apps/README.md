@@ -2,7 +2,16 @@
 
 목적은 D의 [h-gitops Issue #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5)에 실제 Kustomize 선언을 인계하고, C의 Offline Recovery에서 소비할 App·새 Redis Source와 Secret/CA 경계를 마련하는 것이다. RTO/RPO 숫자를 정하거나 실제 복구 결과를 대신하는 자료가 아니다.
 
+**B 수락 완료 — 2026-10-16:** 기존 OCP Run7의 FE→BE 교체·새 Ready/이전 Pod 종료·Synced/Healthy·ImageID 대응과3클라이언트 기능을 [App #4 원 결과](https://github.com/seokpan/seokpan-hybrid-app/issues/4#issuecomment-6145407122)에서 수락했다. B03 두 해상도27/27·PNG12장도 완료다. cp-01의 Recovery Secret3/ConfigMap2 최초 create5·내용/UID 대조를 수락했으며 Engine 기동/TLS·복원은 별도다. [Docs 완결 결과 PR](https://github.com/seokpan/seokpan-hybrid-docs/pull/134)에 원 근거를 연결하며 기존 lab 실행을 반복하지 않는다. 이 수락은 Cloud 업무·다중 Pod/장애·독립 Recovery/RTO/RPO의 완료가 아니다.
+
+<details>
+<summary>기존 Source 입력·당시 Runtime 대기 설명 — 원 작성 기록</summary>
+
 현재 결과는 **입력 대기 Source 후보**이며 실제 Kustomize Build·선언 검사는 Source CI로 확인한다. Lab/Recovery FE/BE의 승인 Harbor Digest는 [Image 인계 카드](../handoff/OCP_SOURCE_HANDOFF_20261005.md)에 반영했다. lab 내부 Registry 복사/Pull은 D 보고로 수신했으며, 환경별 최종 대상·CA/Secret과 실제 배포 검증은 남았다. `INPUT_REQUIRED`와 예약 `.invalid` 주소는 실제 값이 아니며, base와 Recovery(FE/BE, 새 Recovery Redis)는 `replicas: 0`을 유지해 기동을 보류하고, lab Overlay의 Valkey(1단계)와 FE/BE(2단계, #26)만 `replicas: 1`로 선언했다. 이 Render를 Apply/Sync하거나 Recovery Bundle의 검증본으로 사용하지 않는다. 변경 전 1차 자산은 수정하지 않는다. `make preview`는 진단용이고 `make release-manifest`는 미해결 입력/기동 보류가 있으면 출력 파일 생성을 거부한다(lab은 2단계 입력 반영 후 Source 입력 검사를 통과하고 Recovery는 계속 거부된다).
+
+</details>
+
+
 
 ## 출처와 실제 변경
 
