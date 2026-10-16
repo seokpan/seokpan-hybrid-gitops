@@ -21,6 +21,12 @@ spec:
       imagePullSecrets: [{name: recovery-harbor-pull}]
       securityContext:
         seccompProfile: {type: RuntimeDefault}
+        # Recovery-only execution ID matching the image's valkey account (999:999)
+        # because command: [valkey-server] bypasses the root-to-user Entrypoint.
+        # No root initContainer or chmod 777 workaround.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: redis
           image: seokpan-recovery-redis:INPUT_REQUIRED
@@ -72,6 +78,7 @@ spec:
             items: [{key: redis.conf, path: redis.conf}]
         - name: server-tls
           secret:
+            defaultMode: 0440
             secretName: recovery-redis-server-tls
             items:
               - {key: tls.crt, path: tls.crt}
@@ -79,6 +86,7 @@ spec:
               - {key: ca.crt, path: ca.crt}
         - name: server-auth
           secret:
+            defaultMode: 0440
             secretName: recovery-redis-server-auth
             items: [{key: redis-auth.conf, path: redis-auth.conf}]
         - name: runtime-config

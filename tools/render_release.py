@@ -19,6 +19,46 @@ from preflight_lab_valkey import transport_directives
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Approved Recovery-only Valkey execution UID/GID/fsGroup (arbitrary-UID contract, not the image UID).
+RECOVERY_REDIS_EXECUTION_ID = 999
+RECOVERY_SECRET_FILE_MODE = 0o440  # decimal 288 after Kustomize/YAML rendering
+
+
+def recovery_network_policy_specs():
+    """Exact reviewed Recovery NetworkPolicy specs (default deny + minimal allows).
+
+    FE ingress and the restore/Migration client are intentionally absent until an
+    approved entry path/subject exists. Any removal, edit or extra policy is a
+    Release blocker; this is declaration protection, not proof of enforcement.
+    """
+    def peer(name):
+        return {"podSelector": {"matchLabels": {"app.kubernetes.io/name": name}}}
+
+    dns = {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+                   "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}],
+           "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}
+
+    def tcp(port):
+        return [{"protocol": "TCP", "port": port}]
+
+    def select(name):
+        return {"matchLabels": {"app.kubernetes.io/name": name}}
+
+    return {
+        "recovery-default-deny": {"podSelector": {}, "policyTypes": ["Ingress", "Egress"]},
+        "recovery-frontend": {
+            "podSelector": select("frontend"), "policyTypes": ["Ingress", "Egress"],
+            "egress": [{"to": [peer("backend")], "ports": tcp(8000)}, dns]},
+        "recovery-backend": {
+            "podSelector": select("backend"), "policyTypes": ["Ingress", "Egress"],
+            "ingress": [{"from": [peer("frontend")], "ports": tcp(8000)}],
+            "egress": [{"to": [peer("recovery-redis")], "ports": tcp(6379)},
+                       {"to": [{"ipBlock": {"cidr": "192.168.54.60/32"}}], "ports": tcp(3306)},
+                       dns]},
+        "recovery-redis": {
+            "podSelector": select("recovery-redis"), "policyTypes": ["Ingress", "Egress"],
+            "ingress": [{"from": [peer("backend")], "ports": tcp(6379)}]},
+    }
 
 
 def app_manifest_blockers(rendered, environment):
@@ -94,7 +134,7 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         resources = list(yaml.safe_load_all(rendered))
         if not resources or any(not isinstance(r, dict) for r in resources):
             raise ValueError
-        allowed = {"Deployment", "StatefulSet", "Service", "ConfigMap"}
+        allowed = {"Deployment", "StatefulSet", "Service", "ConfigMap", "NetworkPolicy"}
         if any(r.get("kind") not in allowed for r in resources):
             blockers.append("Recovery must not manage namespace, secret, storage or external owners")
         if any(r.get("metadata", {}).get("namespace") != namespace for r in resources):
@@ -102,6 +142,14 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         identities = [(r["kind"], r["metadata"]["name"]) for r in resources]
         if len(identities) != len(set(identities)):
             blockers.append("duplicate Recovery resources")
+        policies = [r for r in resources if r.get("kind") == "NetworkPolicy"]
+        expected_policies = recovery_network_policy_specs()
+        if {r["metadata"]["name"] for r in policies} != expected_policies.keys() or \
+                len(policies) != len(expected_policies) or \
+                any(r.get("apiVersion") != "networking.k8s.io/v1" or
+                    r.get("spec") != expected_policies[r["metadata"]["name"]]
+                    for r in policies if r["metadata"]["name"] in expected_policies):
+            blockers.append("Recovery requires exactly the reviewed default-deny and minimal-allow NetworkPolicies")
         workloads = [r for r in resources if r.get("kind") in ("Deployment", "StatefulSet")]
         if len(workloads) != 3 or {(r["kind"], r["metadata"]["name"]) for r in workloads} != {
                 ("Deployment", "backend"), ("Deployment", "frontend"),
@@ -210,7 +258,9 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         if pod.get("automountServiceAccountToken") is not False or \
                 pod.get("enableServiceLinks") is not False or \
                 pod.get("securityContext", {}).get("seccompProfile") != {"type": "RuntimeDefault"} or \
-                any(k in context for context in (security, pod.get("securityContext", {}))
+                any(k in security for k in ("runAsUser", "runAsGroup", "fsGroup")) or \
+                any(type(pod.get("securityContext", {}).get(k)) is not int
+                    or pod["securityContext"][k] != RECOVERY_REDIS_EXECUTION_ID
                     for k in ("runAsUser", "runAsGroup", "fsGroup")) or \
                 security.get("runAsNonRoot") is not True or \
                 security.get("allowPrivilegeEscalation") is not False or \
@@ -227,6 +277,9 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         }
         for name, (kind, field, reference, path, items) in expected_refs.items():
             source = volumes[name].get(kind, {})
+            if kind == "secret" and (type(source.get("defaultMode")) is not int
+                                     or source["defaultMode"] != RECOVERY_SECRET_FILE_MODE):
+                blockers.append("Recovery Redis Secret volumes must keep the reviewed 0440 file mode")
             if not source.get(field) or (reference and source[field] != reference) or \
                     source.get("optional", False) or source.get("items") != items or \
                     mounts[name].get("mountPath") != path or \

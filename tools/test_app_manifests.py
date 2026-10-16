@@ -157,6 +157,13 @@ class AppManifestBoundaries(unittest.TestCase):
                             container["image"],
                             "image-registry.openshift-image-registry.svc:5000/seokpan-argotest/"
                             "valkey@sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e")
+                    elif env == "recovery" and dep["kind"] == "StatefulSet":
+                        # Harbor Valkey 7.2.14 Index (docker.io digest preserved), #10.
+                        # Declaring it is not Pull/CA/engine start evidence; still replicas 0.
+                        self.assertEqual(
+                            container["image"],
+                            "harbor.seokpan.soldesk.store/seokpan-hybrid/"
+                            "valkey@sha256:ef0f9fb533b1f06fb7aba6478d758ca1c077d49e2bcb2b4365a4ea7f50b6d42e")
                     else:
                         self.assertIn("INPUT_REQUIRED", container["image"])
                     state = dep["metadata"]["annotations"]["seokpan.io/release-state"]
@@ -174,8 +181,16 @@ class AppManifestBoundaries(unittest.TestCase):
                 self.assertFalse(pod["enableServiceLinks"])
                 self.assertEqual(pod["securityContext"]["seccompProfile"]["type"],
                                  "RuntimeDefault")
-                for context in [pod["securityContext"],
-                                *(c["securityContext"] for c in pod["containers"])]:
+                recovery_redis = env == "recovery" and dep["metadata"]["name"] == "recovery-redis"
+                if recovery_redis:
+                    # Approved Recovery-only execution ID; never propagated elsewhere.
+                    for key in ("runAsUser", "runAsGroup", "fsGroup"):
+                        self.assertEqual(pod["securityContext"][key], 999)
+                    contexts = [c["securityContext"] for c in pod["containers"]]
+                else:
+                    contexts = [pod["securityContext"],
+                                *(c["securityContext"] for c in pod["containers"])]
+                for context in contexts:
                     self.assertFalse({"runAsUser", "runAsGroup", "fsGroup"} & context.keys())
                 for c in pod["containers"]:
                     self.assertTrue(c["securityContext"]["runAsNonRoot"])
@@ -390,6 +405,8 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertIn("input-required", volumes["runtime-config"]["configMap"]["name"])
         for name in ("server-tls", "server-auth"):
             self.assertFalse(volumes[name]["secret"].get("optional", False))
+            # 0440 (decimal 288) is readable through the Recovery-only fsGroup 999.
+            self.assertEqual(volumes[name]["secret"]["defaultMode"], 0o440)
             self.assertTrue(next(m for m in container["volumeMounts"] if m["name"] == name)["readOnly"])
         service = next(r for r in self.by_kind("recovery", "Service")
                        if r["metadata"]["name"] == "recovery-redis")
@@ -515,7 +532,8 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
     def fixture(self):
         resources = []
         for path in ("apps/base/backend.yaml", "apps/base/frontend.yaml",
-                     "apps/base/services.yaml", "apps/overlays/recovery/redis.yaml"):
+                     "apps/base/services.yaml", "apps/overlays/recovery/redis.yaml",
+                     "apps/overlays/recovery/networkpolicy.yaml"):
             resources.extend(yaml.safe_load_all((ROOT / path).read_text(encoding="utf-8")))
         config = {}
         for path in ("apps/base/runtime.env", "apps/overlays/recovery/runtime.env"):
@@ -569,6 +587,55 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
     def blockers(self, resources, namespace=None, registry=None):
         return recovery_manifest_blockers(yaml.safe_dump_all(resources),
                                           namespace or self.namespace, registry or self.registry)
+
+    def test_recovery_network_policies_and_secret_mode_are_release_gate_protected(self):
+        # Positive path: the real networkpolicy.yaml plus synthetic inputs/replicas passes.
+        self.assertEqual(self.blockers(self.fixture()), [])
+        names = ("recovery-default-deny", "recovery-frontend", "recovery-backend", "recovery-redis")
+
+        def policy(rs, name):
+            return self.resource(rs, "NetworkPolicy", name)
+
+        def drop(name):
+            return lambda rs: rs.remove(policy(rs, name))
+
+        mutations = [(f"missing {name}", drop(name)) for name in names]
+        mutations += [
+            ("default-deny without Egress", lambda rs: policy(rs, "recovery-default-deny")["spec"].update(policyTypes=["Ingress"])),
+            ("default-deny selects one workload", lambda rs: policy(rs, "recovery-default-deny")["spec"].update(podSelector={"matchLabels": {"app.kubernetes.io/name": "backend"}})),
+            ("DB CIDR widened", lambda rs: policy(rs, "recovery-backend")["spec"]["egress"][1]["to"][0]["ipBlock"].update(cidr="192.168.54.0/24")),
+            ("DB port changed", lambda rs: policy(rs, "recovery-backend")["spec"]["egress"][1]["ports"][0].update(port=3307)),
+            ("Valkey port changed", lambda rs: policy(rs, "recovery-backend")["spec"]["egress"][0]["ports"][0].update(port=6380)),
+            ("FE to BE port changed", lambda rs: policy(rs, "recovery-frontend")["spec"]["egress"][0]["ports"][0].update(port=9000)),
+            ("Valkey peer selector changed", lambda rs: policy(rs, "recovery-redis")["spec"]["ingress"][0]["from"][0]["podSelector"]["matchLabels"].update({"app.kubernetes.io/name": "frontend"})),
+            ("DNS peer changed", lambda rs: policy(rs, "recovery-frontend")["spec"]["egress"][1]["to"][0]["podSelector"]["matchLabels"].update({"k8s-app": "other"})),
+            ("DNS port added", lambda rs: policy(rs, "recovery-frontend")["spec"]["egress"][1]["ports"].append({"protocol": "TCP", "port": 8080})),
+            ("broad egress allow", lambda rs: policy(rs, "recovery-backend")["spec"]["egress"].append({})),
+            ("broad ingress allow", lambda rs: policy(rs, "recovery-redis")["spec"].update(ingress=[{}])),
+            ("FE ingress opened", lambda rs: policy(rs, "recovery-frontend")["spec"].update(ingress=[{"ports": [{"protocol": "TCP", "port": 8080}]}])),
+            ("Valkey egress opened", lambda rs: policy(rs, "recovery-redis")["spec"].update(egress=[{}])),
+            ("extra allow-all policy", lambda rs: rs.append({
+                "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+                "metadata": {"name": "allow-all", "namespace": self.namespace},
+                "spec": {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": [{}]}})),
+            ("duplicate policy", lambda rs: rs.append(copy.deepcopy(policy(rs, "recovery-redis")))),
+            ("policy in another namespace", lambda rs: policy(rs, "recovery-redis")["metadata"].update(namespace="other")),
+            ("wrong policy API", lambda rs: policy(rs, "recovery-redis").update(apiVersion="networking.k8s.io/v1beta1")),
+        ]
+        for secret in ("server-tls", "server-auth"):
+            def volume_source(rs, secret=secret):
+                return self.volume(self.resource(rs, "StatefulSet", "recovery-redis"), secret)["secret"]
+            mutations += [
+                (f"{secret} mode widened to 0644", lambda rs, v=volume_source: v(rs).update(defaultMode=0o644)),
+                (f"{secret} mode removed", lambda rs, v=volume_source: v(rs).pop("defaultMode")),
+                (f"{secret} mode boolean", lambda rs, v=volume_source: v(rs).update(defaultMode=True)),
+                (f"{secret} mode 0400", lambda rs, v=volume_source: v(rs).update(defaultMode=0o400)),
+            ]
+        for label, mutate in mutations:
+            with self.subTest(boundary=label):
+                resources = self.fixture()
+                mutate(resources)
+                self.assertTrue(self.blockers(resources))
 
     def test_recovery_resource_drift_is_rejected_before_activation(self):
         for name in ("frontend", "backend", "recovery-redis"):
@@ -768,6 +835,10 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
             ("mutable local image", lambda rs: redis_container(rs).update(image=self.registry + "/redis:latest")),
             ("outside local Harbor", lambda rs: redis_container(rs).update(image="public.example.test/redis@sha256:" + "a" * 64)),
             ("fixed UID", lambda rs: redis_container(rs)["securityContext"].update(runAsUser=1000)),
+            ("container fixed UID", lambda rs: redis_container(rs)["securityContext"].update(runAsUser=999)),
+            ("wrong pod UID", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].update(runAsUser=1000)),
+            ("wrong pod fsGroup", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].update(fsGroup=0)),
+            ("missing pod fsGroup", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].pop("fsGroup")),
         ]
         for label, mutate in mutations:
             with self.subTest(boundary=label):

@@ -1,0 +1,79 @@
+# 작성자: 최유준
+# 작성 날짜: 2026/10/16
+# Recovery-only candidate: default deny ingress/egress plus explicit allows.
+# Confirmed read-only on the target (2026-10-16): Calico enforces NetworkPolicy,
+# CoreDNS pods carry k8s-app=kube-dns (53 UDP/TCP), pool natOutgoing is enabled.
+# Not confirmed: actual allow/deny traffic, FE ingress entry path (INPUT_REQUIRED;
+# the existing Gateway only admits same-namespace Routes), restore/Migration client.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-frontend
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: frontend}
+  policyTypes: [Ingress, Egress]
+  # Ingress from the approved entry path is intentionally not declared yet:
+  # INPUT_REQUIRED (A/B). No broad allow is added in its place.
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: backend}
+      ports: [{protocol: TCP, port: 8000}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-backend
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: backend}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: frontend}
+      ports: [{protocol: TCP, port: 8000}]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: recovery-redis}
+      ports: [{protocol: TCP, port: 6379}]
+    - to:
+        - ipBlock: {cidr: 192.168.54.60/32}
+      ports: [{protocol: TCP, port: 3306}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-redis
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: recovery-redis}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: backend}
+      ports: [{protocol: TCP, port: 6379}]
+  # No egress rule: Recovery Valkey initiates no connections.
