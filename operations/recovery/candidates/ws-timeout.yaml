@@ -1,0 +1,26 @@
+# 작성자: 최유준
+# 작성 날짜: 2026/10/16
+# HELD 후보 — 어떤 Kustomization에도 포함하지 않는다 (Overlay/compose 밖).
+# Recovery WS read/send idle timeout 3600s 후보. lab의 1h와 같은 값을 "후보"로 준비한 것이며
+# 연결 전체 수명 상한도, Recovery 실측 완료값도 아니다. 장시간 유지·재접속 수락은 앱 기동 후.
+# HTTPRoute 전체 request timeout으로 대신하지 않는다.
+#
+# 적용 전 A/D 확인(설치된 NGF 버전·CRD가 이 API를 지원하는지):
+#   kubectl get crd proxysettingspolicies.gateway.nginx.org -o jsonpath='{.spec.versions[*].name}'
+#   kubectl get deploy -A -l app.kubernetes.io/name=nginx-gateway-fabric -o jsonpath='{..image}'
+# CRD가 없거나 버전이 다르면 이 파일은 사용하지 않고 B와 대안(SnippetsFilter 등, 별도 검토)을 정한다.
+# 저장소 소스는 NGF 2.6.7이고 동봉 CRD에 v1alpha1 spec.timeout.read/send가 있다(A 회신). 실제 설치 Image·served CRD 대조는 남아 있다.
+# 기존 HAProxy 앞단 기본 client/server timeout(60s)이 있으면 NGF만 3600s로 해도 전체 경로가 1시간 유지된다고 말하지 않는다.
+# 참고: NGF ProxySettingsPolicy(gateway.nginx.org/v1alpha1)는 timeout.read/send가 연산 간 idle 시간이며
+#       대상 Route와 같은 Namespace에 있어야 한다. 아래는 WS 전용 Route에만 붙인다.
+apiVersion: gateway.nginx.org/v1alpha1
+kind: ProxySettingsPolicy
+metadata:
+  name: recovery-entry-ws
+  namespace: seokpan-recovery
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: recovery-entry-ws}
+  timeout:
+    read: 3600s
+    send: 3600s

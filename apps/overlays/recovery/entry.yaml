@@ -1,0 +1,54 @@
+# 작성자: 최유준
+# 작성 날짜: 2026/10/16
+# Recovery 전용 FE 진입 경로 후보 (Gateway API, 일반 Kubernetes, NGINX Gateway Fabric 후보).
+# 기존 application/seokpan-gateway의 Listener/NodePort/허용 Namespace는 변경하지 않는다.
+# 확정 아님: Host(recovery.seokpan.soldesk.store)는 후보이며 A의 Host·접속 매핑·인증서 확인 뒤 활성값이 된다.
+# 외부 포트가 443이 아니면 runtime.env의 Origin에도 같은 포트를 포함해야 한다 (Release 검사가 Host를 대조).
+# URI prefix는 제거하지 않는다(URLRewrite 금지). FE 프록시는 쓰지 않고 /api/v1, /ws/v1은 Backend:8000으로 직접 전달한다.
+# HTTPRoute 전체 request timeout으로 WS 유지시간을 대신하지 않는다 (WS 시간 후보: operations/recovery/candidates/ws-timeout.yaml, 별도 보류).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: recovery-entry
+  annotations:
+    seokpan.io/release-state: input-required-no-runtime-validation
+spec:
+  gatewayClassName: nginx   # 저장소 선언 기준(controllerName gateway.nginx.org/nginx-gateway-controller). 클러스터 Accepted·신규 Gateway Programmed는 미확인
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443                                    # 후보. 외부 포트·NodePort 매핑은 A 확정
+      hostname: recovery.seokpan.soldesk.store     # 후보. A 확인 전 확정 금지
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - {kind: Secret, name: recovery-entry-tls}   # Source 밖 보호 공급(A/C). 이름은 논리 참조일 뿐 공급 증거가 아님
+      allowedRoutes:
+        namespaces: {from: Same}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: recovery-entry
+spec:
+  parentRefs:
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: recovery-entry, sectionName: https}
+  hostnames: [recovery.seokpan.soldesk.store]
+  rules:
+    - matches: [{path: {type: PathPrefix, value: /api/v1}}]
+      backendRefs: [{name: backend, port: 8000}]
+    - matches: [{path: {type: PathPrefix, value: /}}]
+      backendRefs: [{name: frontend, port: 8080}]
+---
+# WS 전용 Route: 이후 Policy를 이 Route에만 붙여 FE/API에 긴 timeout이 번지지 않게 분리한다.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: recovery-entry-ws
+spec:
+  parentRefs:
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: recovery-entry, sectionName: https}
+  hostnames: [recovery.seokpan.soldesk.store]
+  rules:
+    - matches: [{path: {type: PathPrefix, value: /ws/v1}}]
+      backendRefs: [{name: backend, port: 8000}]

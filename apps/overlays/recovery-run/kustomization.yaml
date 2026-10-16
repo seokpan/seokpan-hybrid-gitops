@@ -1,0 +1,19 @@
+# 작성자: 최유준
+# 작성 날짜: 2026/10/16
+# Recovery "이번 실행용" Overlay. 보류용 원본(apps/overlays/recovery, redis.yaml replicas 0)은 바꾸지 않는다.
+# 이미 실행 중인 recovery-redis 1개를 유지하기 위해 StatefulSet replicas만 1로 명시한다.
+# FE/BE replicas 0, Migration suspended는 그대로다. replicas 0인 전체 산출물을 그대로 적용하는 방식은 쓰지 않는다.
+# 적용 전 live Diff에서 Valkey scale-down 또는 Pod template/image/volume 변경이 보이면 적용하지 않는다:
+#   kustomize build apps/overlays/recovery-run | kubectl diff -f - --server-side=false
+# 주의: 원본의 runtime-config ConfigMap 참조가 자리표시자(-input-required)라 live와 다를 수 있다.
+#       그 경우 이 StatefulSet은 제외하거나 live 상태를 먼저 Source에 반영해야 하며, 임의로 적용하지 않는다.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../recovery
+patches:
+  - target: {kind: StatefulSet, name: recovery-redis}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

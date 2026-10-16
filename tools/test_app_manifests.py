@@ -310,6 +310,39 @@ class AppManifestBoundaries(unittest.TestCase):
             for route in self.by_kind(env, "Route"):
                 self.assertNotIn("health", route["spec"].get("path", ""))
 
+    def test_recovery_overlay_declares_entry_without_touching_existing_gateway_or_activation(self):
+        gateways = self.by_kind("recovery", "Gateway")
+        self.assertEqual([g["metadata"]["name"] for g in gateways], ["recovery-entry"])
+        self.assertEqual(sorted(r["metadata"]["name"] for r in self.by_kind("recovery", "HTTPRoute")),
+                         ["recovery-entry", "recovery-entry-ws"])
+        for kind in ("Route", "Ingress", "ProxySettingsPolicy", "SnippetsFilter", "Job"):
+            self.assertEqual(self.by_kind("recovery", kind), [])
+        listener, = gateways[0]["spec"]["listeners"]
+        self.assertEqual(gateways[0]["metadata"]["namespace"], "seokpan-recovery")
+        self.assertEqual(listener["allowedRoutes"], {"namespaces": {"from": "Same"}})
+        # FE/BE stay held; this Source change neither scales nor edits the Valkey declaration.
+        for workload in self.workloads("recovery"):
+            self.assertEqual(workload["spec"]["replicas"], 0)
+
+    def test_recovery_run_overlay_changes_only_the_running_valkey_replica_count(self):
+        base = subprocess.run([KUSTOMIZE, "build", str(ROOT / "apps/overlays/recovery")],
+                              check=True, capture_output=True, text=True).stdout
+        run = subprocess.run([KUSTOMIZE, "build", str(ROOT / "apps/overlays/recovery-run")],
+                             check=True, capture_output=True, text=True).stdout
+        base_docs = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(base) if d}
+        run_docs = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(run) if d}
+        self.assertEqual(base_docs.keys(), run_docs.keys())
+        redis = ("StatefulSet", "recovery-redis")
+        self.assertEqual(base_docs[redis]["spec"]["replicas"], 0)
+        self.assertEqual(run_docs[redis]["spec"]["replicas"], 1)
+        for key, doc in base_docs.items():
+            expected = copy.deepcopy(doc)
+            if key == redis:
+                expected["spec"]["replicas"] = 1
+            self.assertEqual(run_docs[key], expected, key)
+        for name in ("backend", "frontend"):
+            self.assertEqual(run_docs[("Deployment", name)]["spec"]["replicas"], 0)
+
     def test_lab_same_host_api_ws_and_recovery_no_assumed_entry_path(self):
         config = self.backend_config("lab")["data"]
         origin, = json.loads(config["SEOKPAN_ALLOWED_ORIGINS"])
@@ -533,8 +566,21 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
         resources = []
         for path in ("apps/base/backend.yaml", "apps/base/frontend.yaml",
                      "apps/base/services.yaml", "apps/overlays/recovery/redis.yaml",
-                     "apps/overlays/recovery/networkpolicy.yaml"):
+                     "apps/overlays/recovery/networkpolicy.yaml",
+                     "apps/overlays/recovery/entry.yaml"):
             resources.extend(yaml.safe_load_all((ROOT / path).read_text(encoding="utf-8")))
+        # Fixture-only substitution of owner-supplied values (never real Host/class/labels).
+        for r in resources:
+            if r["kind"] == "Gateway":
+                r["spec"]["gatewayClassName"] = "fixture-class"
+                r["metadata"]["annotations"]["seokpan.io/release-state"] = "source-reviewed-runtime-unverified"
+                r["spec"]["listeners"][0]["hostname"] = "recovery.example.test"
+            elif r["kind"] == "HTTPRoute":
+                r["spec"]["hostnames"] = ["recovery.example.test"]
+            elif r["kind"] == "NetworkPolicy" and r["metadata"]["name"].startswith("recovery-entry-"):
+                peer = r["spec"]["ingress"][0]["from"][0]
+                peer["namespaceSelector"]["matchLabels"] = {"kubernetes.io/metadata.name": "fixture-dataplane"}
+                peer["podSelector"]["matchLabels"] = {"fixture/dataplane": "gateway"}
         config = {}
         for path in ("apps/base/runtime.env", "apps/overlays/recovery/runtime.env"):
             for line in (ROOT / path).read_text(encoding="utf-8").splitlines():
@@ -591,7 +637,8 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
     def test_recovery_network_policies_and_secret_mode_are_release_gate_protected(self):
         # Positive path: the real networkpolicy.yaml plus synthetic inputs/replicas passes.
         self.assertEqual(self.blockers(self.fixture()), [])
-        names = ("recovery-default-deny", "recovery-frontend", "recovery-backend", "recovery-redis")
+        names = ("recovery-default-deny", "recovery-frontend", "recovery-backend", "recovery-redis",
+                 "recovery-entry-frontend", "recovery-entry-backend")
 
         def policy(rs, name):
             return self.resource(rs, "NetworkPolicy", name)
@@ -636,6 +683,68 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
                 resources = self.fixture()
                 mutate(resources)
                 self.assertTrue(self.blockers(resources))
+
+    def test_recovery_entry_contract_and_dataplane_peer_are_release_gate_protected(self):
+        self.assertEqual(self.blockers(self.fixture()), [])
+
+        def res(rs, kind, name):
+            return self.resource(rs, kind, name)
+
+        def listener(rs):
+            return res(rs, "Gateway", "recovery-entry")["spec"]["listeners"][0]
+
+        def rules(rs, name="recovery-entry"):
+            return res(rs, "HTTPRoute", name)["spec"]["rules"]
+
+        def set_origin(rs, value):
+            res(rs, "ConfigMap", "backend-config")["data"]["SEOKPAN_ALLOWED_ORIGINS"] = value
+
+        def entry_policy(rs, name):
+            return res(rs, "NetworkPolicy", name)["spec"]["ingress"][0]
+
+        mutations = [
+            ("missing Gateway", lambda rs: rs.remove(res(rs, "Gateway", "recovery-entry"))),
+            ("missing WS Route", lambda rs: rs.remove(res(rs, "HTTPRoute", "recovery-entry-ws"))),
+            ("extra Route", lambda rs: rs.append({
+                "apiVersion": "gateway.networking.k8s.io/v1", "kind": "HTTPRoute",
+                "metadata": {"name": "other", "namespace": self.namespace}, "spec": {}})),
+            ("cross-namespace Route allowed", lambda rs: listener(rs).update(allowedRoutes={"namespaces": {"from": "All"}})),
+            ("plain HTTP listener", lambda rs: listener(rs).update(protocol="HTTP")),
+            ("TLS passthrough", lambda rs: listener(rs)["tls"].update(mode="Passthrough")),
+            ("existing application Secret reference", lambda rs: listener(rs)["tls"]["certificateRefs"][0].update(name="application-tls")),
+            ("second listener", lambda rs: res(rs, "Gateway", "recovery-entry")["spec"]["listeners"].append(copy.deepcopy(listener(rs)))),
+            ("attached to the existing Gateway", lambda rs: res(rs, "HTTPRoute", "recovery-entry")["spec"]["parentRefs"][0].update(name="seokpan-gateway", namespace="application")),
+            ("API sent to Frontend", lambda rs: rules(rs)[0]["backendRefs"][0].update(name="frontend", port=8080)),
+            ("FE sent to Backend", lambda rs: rules(rs)[1]["backendRefs"][0].update(port=8001)),
+            ("WS sent to Frontend", lambda rs: rules(rs, "recovery-entry-ws")[0]["backendRefs"][0].update(name="frontend")),
+            ("prefix rewrite", lambda rs: rules(rs)[0].update(filters=[{"type": "URLRewrite", "urlRewrite": {"path": {"type": "ReplacePrefixMatch", "replacePrefixMatch": "/"}}}])),
+            ("route request timeout stands in for WS timeout", lambda rs: rules(rs, "recovery-entry-ws")[0].update(timeouts={"request": "3600s"})),
+            ("extra path", lambda rs: rules(rs).append({"matches": [{"path": {"type": "PathPrefix", "value": "/admin"}}], "backendRefs": [{"name": "backend", "port": 8000}]})),
+            ("Route Host differs from Gateway", lambda rs: res(rs, "HTTPRoute", "recovery-entry")["spec"].update(hostnames=["other.example.test"])),
+            ("wildcard Host", lambda rs: listener(rs).update(hostname="*.example.test")),
+            ("Origin differs from Host", lambda rs: set_origin(rs, '["https://other.example.test"]')),
+            ("two Origins", lambda rs: set_origin(rs, '["https://recovery.example.test","https://other.example.test"]')),
+            ("HTTP Origin", lambda rs: set_origin(rs, '["http://recovery.example.test"]')),
+            ("explicit 443 Origin", lambda rs: set_origin(rs, '["https://recovery.example.test:443"]')),
+            ("Origin with path", lambda rs: set_origin(rs, '["https://recovery.example.test/"]')),
+            ("entry NP widened to all Pods", lambda rs: entry_policy(rs, "recovery-entry-frontend").update({"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fixture-dataplane"}}}]})),
+            ("entry NP without Namespace", lambda rs: entry_policy(rs, "recovery-entry-backend").update({"from": [{"podSelector": {"matchLabels": {"fixture/dataplane": "gateway"}}}]})),
+            ("entry NP empty Pod selector", lambda rs: entry_policy(rs, "recovery-entry-backend")["from"][0].update(podSelector={"matchLabels": {}})),
+            ("entry NP ipBlock", lambda rs: entry_policy(rs, "recovery-entry-frontend").update({"from": [{"ipBlock": {"cidr": "0.0.0.0/0"}}]})),
+            ("entry NP BE peers differ", lambda rs: entry_policy(rs, "recovery-entry-backend")["from"][0]["podSelector"]["matchLabels"].update({"fixture/dataplane": "controller"})),
+            ("entry NP FE port widened", lambda rs: entry_policy(rs, "recovery-entry-frontend")["ports"].append({"protocol": "TCP", "port": 8000})),
+            ("entry NP BE port changed", lambda rs: entry_policy(rs, "recovery-entry-backend")["ports"][0].update(port=8080)),
+            ("entry NP also admits Valkey", lambda rs: res(rs, "NetworkPolicy", "recovery-entry-backend")["spec"].update(podSelector={"matchLabels": {"app.kubernetes.io/name": "recovery-redis"}})),
+        ]
+        for label, mutate in mutations:
+            with self.subTest(boundary=label):
+                resources = self.fixture()
+                mutate(resources)
+                self.assertTrue(self.blockers(resources))
+        # A non-default external port is legitimate when the Origin carries it.
+        resources = self.fixture()
+        set_origin(resources, '["https://recovery.example.test:8443"]')
+        self.assertEqual(self.blockers(resources), [])
 
     def test_recovery_resource_drift_is_rejected_before_activation(self):
         for name in ("frontend", "backend", "recovery-redis"):
