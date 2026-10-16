@@ -20,7 +20,7 @@ from preflight_lab_valkey import transport_directives
 
 ROOT = Path(__file__).resolve().parents[1]
 # Approved Recovery-only Valkey execution UID/GID/fsGroup (arbitrary-UID contract, not the image UID).
-RECOVERY_REDIS_EXECUTION_ID = 10001
+RECOVERY_REDIS_EXECUTION_ID = 999
 
 
 def app_manifest_blockers(rendered, environment):

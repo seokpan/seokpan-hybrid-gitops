@@ -178,7 +178,7 @@ class AppManifestBoundaries(unittest.TestCase):
                 if recovery_redis:
                     # Approved Recovery-only execution ID; never propagated elsewhere.
                     for key in ("runAsUser", "runAsGroup", "fsGroup"):
-                        self.assertEqual(pod["securityContext"][key], 10001)
+                        self.assertEqual(pod["securityContext"][key], 999)
                     contexts = [c["securityContext"] for c in pod["containers"]]
                 else:
                     contexts = [pod["securityContext"],
@@ -398,6 +398,8 @@ class AppManifestBoundaries(unittest.TestCase):
         self.assertIn("input-required", volumes["runtime-config"]["configMap"]["name"])
         for name in ("server-tls", "server-auth"):
             self.assertFalse(volumes[name]["secret"].get("optional", False))
+            # 0440 (decimal 288) is readable through the Recovery-only fsGroup 999.
+            self.assertEqual(volumes[name]["secret"]["defaultMode"], 0o440)
             self.assertTrue(next(m for m in container["volumeMounts"] if m["name"] == name)["readOnly"])
         service = next(r for r in self.by_kind("recovery", "Service")
                        if r["metadata"]["name"] == "recovery-redis")
@@ -776,7 +778,7 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
             ("mutable local image", lambda rs: redis_container(rs).update(image=self.registry + "/redis:latest")),
             ("outside local Harbor", lambda rs: redis_container(rs).update(image="public.example.test/redis@sha256:" + "a" * 64)),
             ("fixed UID", lambda rs: redis_container(rs)["securityContext"].update(runAsUser=1000)),
-            ("container fixed UID", lambda rs: redis_container(rs)["securityContext"].update(runAsUser=10001)),
+            ("container fixed UID", lambda rs: redis_container(rs)["securityContext"].update(runAsUser=999)),
             ("wrong pod UID", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].update(runAsUser=1000)),
             ("wrong pod fsGroup", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].update(fsGroup=0)),
             ("missing pod fsGroup", lambda rs: self.resource(rs, "StatefulSet", "recovery-redis")["spec"]["template"]["spec"]["securityContext"].pop("fsGroup")),
