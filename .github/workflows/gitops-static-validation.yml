@@ -138,6 +138,17 @@ jobs:
           print("Executed source tests:", counts[0])
           PY
 
+      - name: Run Cloud namespace and Route permission regression checks
+        run: |
+          set -euo pipefail
+          "$GITOPS_TEST_PYTHON" clusters/cloud/bootstrap/test-platform-next.py -v
+          "$GITOPS_TEST_PYTHON" clusters/cloud/bootstrap/test-route-custom-host.py -v
+          {
+            printf 'Cloud platform regression source: %s\n' "$(git rev-parse HEAD)"
+            sha256sum clusters/cloud/bootstrap/{platform-next,route-custom-host,test-platform-next,test-route-custom-host}.py
+            printf 'Scope: offline authorization and patch race checks; no cluster or deployment.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Check declared Release JSON records without promotion
         run: |
           set -euo pipefail
