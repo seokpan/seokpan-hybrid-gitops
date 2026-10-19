@@ -1,0 +1,26 @@
+# 작성자: 최유준
+# 작성 날짜: 2026/10/19
+# Recovery "전체 앱 실행용" Overlay 후보 (HELD). 전체 산출물을 적용해도 실행 중인 Valkey 1개가 0으로 줄지 않게 한다.
+# ../recovery 전체(FE/BE 0, Migration 별도, 진입 후보 포함)를 상속하고 Valkey만 live에 맞춘다:
+#   1) recovery-redis replicas 0 -> 1
+#   2) runtime-config ConfigMap 참조를 live Pod template이 실제로 쓰는 이름으로 교체 (현재 자리표시자)
+# 아래 live 이름은 읽기 전용 조회(operations/recovery/README.md 'Valkey live 대조')로 확인한 값만 넣는다.
+# live 대조에서 다른 필드(image/volume/mount/args/resources)가 다르면 임의로 맞추지 말고 패치를 추가하기 전에 B/C와 검토한다.
+# 대응이 끝나기 전까지 전체 산출물 적용은 보류한다. recovery-run(Valkey 3객체 전용)은 그대로 유지한다.
+# 이 Overlay는 활성화 승인이 아니다: FE/BE replicas 0, Migration suspended, input-required 표식은 유지된다.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../recovery
+patches:
+  - target: {kind: StatefulSet, name: recovery-redis}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: test
+        path: /spec/template/spec/volumes/5/name
+        value: runtime-config
+      - op: replace
+        path: /spec/template/spec/volumes/5/configMap/name
+        value: RECOVERY_REDIS_RUNTIME_CONFIG_LIVE_INPUT_REQUIRED
