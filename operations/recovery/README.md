@@ -10,7 +10,7 @@
 | `compose/` | App Overlay + `migration/`을 한 번에 합성해 `backend-config` hash·Backend digest를 공통 변환 | 검토용 |
 | `candidates/ws-timeout.yaml` | NGF `ProxySettingsPolicy` WS read/send 3600s 후보. 어떤 Kustomization에도 미포함 | A/D CRD 확인 전 보류 |
 
-| `apps/overlays/recovery-run/` | 실행용 Overlay: 실행 중인 recovery-redis만 replicas 1로 명시. FE/BE 0 유지 | live Diff 확인 전 적용 금지 |
+| `apps/overlays/recovery-run/` | Valkey 보존 전용 산출물: 정확히 StatefulSet·Service·ConfigMap 3개만 출력(FE/BE·Gateway·Route·NP 제외). 전체 Recovery 적용용이 아님 | live Diff 확인 전 적용 금지 |
 
 ## 분리 산출물 만들기 (직접 Apply 금지)
 

@@ -324,24 +324,49 @@ class AppManifestBoundaries(unittest.TestCase):
         for workload in self.workloads("recovery"):
             self.assertEqual(workload["spec"]["replicas"], 0)
 
-    def test_recovery_run_overlay_changes_only_the_running_valkey_replica_count(self):
-        base = subprocess.run([KUSTOMIZE, "build", str(ROOT / "apps/overlays/recovery")],
-                              check=True, capture_output=True, text=True).stdout
-        run = subprocess.run([KUSTOMIZE, "build", str(ROOT / "apps/overlays/recovery-run")],
-                             check=True, capture_output=True, text=True).stdout
-        base_docs = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(base) if d}
-        run_docs = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(run) if d}
-        self.assertEqual(base_docs.keys(), run_docs.keys())
+    @staticmethod
+    def build_docs(path):
+        out = subprocess.run([KUSTOMIZE, "build", str(path)], check=True, capture_output=True, text=True).stdout
+        return {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(out) if d}
+
+    @staticmethod
+    def run_overlay_leaks(docs):
+        """Allow-list: ONLY the reviewed running-Valkey objects may reach the preservation output."""
+        allowed = {("StatefulSet", "recovery-redis"), ("Service", "recovery-redis")}
+        return sorted(key for key in docs if key not in allowed
+                      and not (key[0] == "ConfigMap" and key[1].startswith("recovery-redis-config-")))
+
+    def test_recovery_run_overlay_is_valkey_only_and_excludes_every_held_object(self):
+        base = self.build_docs(ROOT / "apps/overlays/recovery")
+        run = self.build_docs(ROOT / "apps/overlays/recovery-run")
+        self.assertEqual(self.run_overlay_leaks(run), [])
+        self.assertEqual(sorted(k[0] for k in run), ["ConfigMap", "Service", "StatefulSet"])
+        for kind in ("Deployment", "Gateway", "HTTPRoute", "NetworkPolicy", "Job"):
+            self.assertFalse([k for k in run if k[0] == kind], kind)
+        self.assertFalse([k for k in run if k[1].startswith("backend-config")])
         redis = ("StatefulSet", "recovery-redis")
-        self.assertEqual(base_docs[redis]["spec"]["replicas"], 0)
-        self.assertEqual(run_docs[redis]["spec"]["replicas"], 1)
-        for key, doc in base_docs.items():
-            expected = copy.deepcopy(doc)
+        self.assertEqual(base[redis]["spec"]["replicas"], 0)
+        self.assertEqual(run[redis]["spec"]["replicas"], 1)
+        # Everything else about the three objects is exactly the reviewed original (same hash, same template).
+        for key, doc in run.items():
+            expected = copy.deepcopy(base[key])
             if key == redis:
                 expected["spec"]["replicas"] = 1
-            self.assertEqual(run_docs[key], expected, key)
-        for name in ("backend", "frontend"):
-            self.assertEqual(run_docs[("Deployment", name)]["spec"]["replicas"], 0)
+            self.assertEqual(doc, expected, key)
+
+    def test_recovery_run_overlay_allow_list_catches_a_new_object_added_to_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            copy_root = Path(directory) / "apps"
+            shutil.copytree(ROOT / "apps", copy_root)
+            overlay = copy_root / "overlays/recovery"
+            (overlay / "leak.yaml").write_text(
+                "apiVersion: v1\nkind: Service\nmetadata:\n  name: leak\nspec:\n  ports: [{port: 80}]\n",
+                encoding="utf-8")
+            kustomization = overlay / "kustomization.yaml"
+            kustomization.write_text(kustomization.read_text(encoding="utf-8").replace(
+                "  - entry.yaml\n", "  - entry.yaml\n  - leak.yaml\n"), encoding="utf-8")
+            leaks = self.run_overlay_leaks(self.build_docs(copy_root / "overlays/recovery-run"))
+            self.assertEqual(leaks, [("Service", "leak")])
 
     def test_lab_same_host_api_ws_and_recovery_no_assumed_entry_path(self):
         config = self.backend_config("lab")["data"]
