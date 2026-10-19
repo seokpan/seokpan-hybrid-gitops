@@ -1,0 +1,21 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-19
+# Alertmanager 수신 경로(규칙 → Alertmanager → 메일) 시험용 임시 규칙.
+# Application 미포함. 메일 확인 후 생성 UID와 대조해 즉시 삭제한다.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: seokpan-receiver-test
+  namespace: seokpan-cloud
+spec:
+  groups:
+    - name: seokpan.receiver-test
+      rules:
+        - alert: SeokpanReceiverTest
+          expr: vector(1)
+          for: 0m
+          labels:
+            severity: info
+            purpose: receiver-test
+            run: monitoring-target-20261019-01
+          annotations:
+            summary: "Alertmanager 수신 경로 시험 (삭제 예정)"

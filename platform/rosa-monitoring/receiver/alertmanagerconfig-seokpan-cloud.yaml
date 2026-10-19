@@ -1,0 +1,28 @@
+# 작성자: 최유준 / 작성 날짜: 2026-10-19
+# 1차 alertmanager-config.yaml의 SMTP 설정을 AlertmanagerConfig로 옮긴 시험용 선언.
+# 비밀번호는 이 파일에 없고 같은 Namespace의 Secret(alertmanager-smtp-credential)을 참조한다.
+# Argo 경로(app/) 밖에 두며, ROSA 복원 후 수동으로 적용한다.
+apiVersion: monitoring.coreos.com/v1beta1
+kind: AlertmanagerConfig
+metadata:
+  name: seokpan-cloud-email
+  namespace: seokpan-cloud
+spec:
+  route:
+    receiver: default-email
+    groupBy: ["alertname", "namespace"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+  receivers:
+    - name: default-email
+      emailConfigs:
+        - to: "seokpan@soldesk.store"
+          from: "alertmanager@alerts-seokpan.soldesk.store"
+          smarthost: "smtp.resend.com:587"
+          authUsername: "resend"
+          authPassword:
+            name: alertmanager-smtp-credential
+            key: smtp-password
+          requireTLS: true
+          sendResolved: true
