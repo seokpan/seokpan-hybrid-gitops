@@ -5,6 +5,8 @@ No cluster, registry, AWS or GitHub API calls are made by this script.
 """
 
 import argparse
+import copy
+import json
 import os
 from pathlib import Path
 import re
@@ -24,12 +26,37 @@ RECOVERY_REDIS_EXECUTION_ID = 999
 RECOVERY_SECRET_FILE_MODE = 0o440  # decimal 288 after Kustomize/YAML rendering
 
 
-def recovery_network_policy_specs():
+ENTRY_PEER_NAMESPACE_KEY = "kubernetes.io/metadata.name"
+
+
+def recovery_entry_peer_valid(peer):
+    """A data-plane peer must pin BOTH Namespace and Pod labels (one AND peer).
+
+    The values are owner-supplied (A/D read them from the real Gateway data-plane
+    Pod). This only protects the shape: no empty/wildcard selector, no ipBlock and
+    no expression-based widening. It does not prove the labels are the real Pod's.
+    """
+    def labels_only(selector, single_key=None):
+        if not isinstance(selector, dict) or set(selector) != {"matchLabels"}:
+            return False
+        labels = selector["matchLabels"]
+        if not isinstance(labels, dict) or not labels:
+            return False
+        if single_key is not None and set(labels) != {single_key}:
+            return False
+        return all(isinstance(k, str) and k and isinstance(v, str) and v for k, v in labels.items())
+    return (isinstance(peer, dict) and set(peer) == {"namespaceSelector", "podSelector"}
+            and labels_only(peer["namespaceSelector"], ENTRY_PEER_NAMESPACE_KEY)
+            and labels_only(peer["podSelector"]))
+
+
+def recovery_network_policy_specs(entry_peer):
     """Exact reviewed Recovery NetworkPolicy specs (default deny + minimal allows).
 
-    FE ingress and the restore/Migration client are intentionally absent until an
-    approved entry path/subject exists. Any removal, edit or extra policy is a
-    Release blocker; this is declaration protection, not proof of enforcement.
+    FE/BE ingress is allowed only from ONE data-plane peer (Namespace+Pod labels
+    together) and only to Frontend 8080 / Backend 8000. The Migration client has its
+    own separate policy outside this App render. Any removal, edit or extra policy
+    is a Release blocker; this is declaration protection, not proof of enforcement.
     """
     def peer(name):
         return {"podSelector": {"matchLabels": {"app.kubernetes.io/name": name}}}
@@ -58,7 +85,81 @@ def recovery_network_policy_specs():
         "recovery-redis": {
             "podSelector": select("recovery-redis"), "policyTypes": ["Ingress", "Egress"],
             "ingress": [{"from": [peer("backend")], "ports": tcp(6379)}]},
+        "recovery-entry-frontend": {
+            "podSelector": select("frontend"), "policyTypes": ["Ingress"],
+            "ingress": [{"from": [copy.deepcopy(entry_peer)], "ports": tcp(8080)}]},
+        "recovery-entry-backend": {
+            "podSelector": select("backend"), "policyTypes": ["Ingress"],
+            "ingress": [{"from": [copy.deepcopy(entry_peer)], "ports": tcp(8000)}]},
     }
+
+
+ENTRY_HOST = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)+\Z")
+
+
+def recovery_entry_blockers(resources, config):
+    """Exact Gateway/HTTPRoute contract for the Recovery-only entry candidate.
+
+    The existing application Gateway is never referenced. Paths are forwarded with no
+    prefix rewrite, /api/v1 and /ws/v1 go to Backend:8000 and everything else to
+    Frontend:8080. No HTTPRoute timeout/filter may stand in for WS idle settings.
+    Host/listener port values are candidates until A confirms; this checks that the
+    Gateway, both Routes and the single allowed Origin name the same Host.
+    """
+    blockers = []
+    gateways = [r for r in resources if r.get("kind") == "Gateway"]
+    routes = {r["metadata"]["name"]: r for r in resources if r.get("kind") == "HTTPRoute"}
+    if len(gateways) != 1 or gateways[0]["metadata"]["name"] != "recovery-entry" or \
+            set(routes) != {"recovery-entry", "recovery-entry-ws"} or \
+            len([r for r in resources if r.get("kind") == "HTTPRoute"]) != 2:
+        return ["Recovery entry requires exactly Gateway recovery-entry and HTTPRoutes recovery-entry and recovery-entry-ws"]
+    gateway = gateways[0]
+    spec = gateway.get("spec", {})
+    listener = (spec.get("listeners") or [{}])[0]
+    host = listener.get("hostname")
+    port = listener.get("port")
+    if gateway.get("apiVersion") != "gateway.networking.k8s.io/v1" or \
+            set(spec) != {"gatewayClassName", "listeners"} or \
+            not isinstance(spec["gatewayClassName"], str) or not spec["gatewayClassName"] or \
+            len(spec["listeners"]) != 1 or \
+            set(listener) != {"name", "protocol", "port", "hostname", "tls", "allowedRoutes"} or \
+            listener["name"] != "https" or listener["protocol"] != "HTTPS" or \
+            isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535 or \
+            not isinstance(host, str) or ENTRY_HOST.match(host) is None or \
+            listener["tls"] != {"mode": "Terminate",
+                                "certificateRefs": [{"kind": "Secret", "name": "recovery-entry-tls"}]} or \
+            listener["allowedRoutes"] != {"namespaces": {"from": "Same"}}:
+        blockers.append("Recovery Gateway must be one HTTPS Terminate listener with its own Secret reference and same-Namespace Routes only")
+        return blockers
+    parent = [{"group": "gateway.networking.k8s.io", "kind": "Gateway",
+               "name": "recovery-entry", "sectionName": "https"}]
+
+    def rule(path, service, service_port):
+        return {"matches": [{"path": {"type": "PathPrefix", "value": path}}],
+                "backendRefs": [{"name": service, "port": service_port}]}
+    expected = {
+        "recovery-entry": [rule("/api/v1", "backend", 8000), rule("/", "frontend", 8080)],
+        "recovery-entry-ws": [rule("/ws/v1", "backend", 8000)],
+    }
+    for name, rules in expected.items():
+        route = routes[name]
+        if route.get("apiVersion") != "gateway.networking.k8s.io/v1" or \
+                route.get("spec") != {"parentRefs": parent, "hostnames": [host], "rules": rules}:
+            blockers.append("Recovery HTTPRoute must keep the reviewed Host, paths, Services and ports without rewrite/filter/timeout")
+    try:
+        origins = json.loads(config["SEOKPAN_ALLOWED_ORIGINS"])
+        origin, = origins
+        parts = urlsplit(origin)
+        origin_port = parts.port
+        ok = (isinstance(origin, str) and parts.scheme == "https" and parts.hostname == host
+              and parts.username is None and parts.password is None
+              and parts.path == "" and not parts.query and not parts.fragment
+              and origin_port != 443 and origin == f"https://{host}" + (f":{origin_port}" if origin_port else ""))
+    except (KeyError, TypeError, ValueError):
+        ok = False
+    if not ok:
+        blockers.append("Recovery Origin must be exactly one normalized HTTPS Origin for the entry Host (non-default external port included, no explicit 443)")
+    return blockers
 
 
 def app_manifest_blockers(rendered, environment):
@@ -134,7 +235,7 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         resources = list(yaml.safe_load_all(rendered))
         if not resources or any(not isinstance(r, dict) for r in resources):
             raise ValueError
-        allowed = {"Deployment", "StatefulSet", "Service", "ConfigMap", "NetworkPolicy"}
+        allowed = {"Deployment", "StatefulSet", "Service", "ConfigMap", "NetworkPolicy", "Gateway", "HTTPRoute"}
         if any(r.get("kind") not in allowed for r in resources):
             blockers.append("Recovery must not manage namespace, secret, storage or external owners")
         if any(r.get("metadata", {}).get("namespace") != namespace for r in resources):
@@ -143,7 +244,16 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         if len(identities) != len(set(identities)):
             blockers.append("duplicate Recovery resources")
         policies = [r for r in resources if r.get("kind") == "NetworkPolicy"]
-        expected_policies = recovery_network_policy_specs()
+        entry_policy = next((r for r in policies if r["metadata"]["name"] == "recovery-entry-frontend"), None)
+        try:
+            entry_peer = entry_policy["spec"]["ingress"][0]["from"][0]
+        except (KeyError, IndexError, TypeError):
+            entry_peer = None
+        if not recovery_entry_peer_valid(entry_peer):
+            blockers.append("Recovery entry policies require one data-plane peer with both Namespace and Pod labels")
+            entry_peer = {"namespaceSelector": {"matchLabels": {ENTRY_PEER_NAMESPACE_KEY: "invalid"}},
+                          "podSelector": {"matchLabels": {"invalid": "invalid"}}}
+        expected_policies = recovery_network_policy_specs(entry_peer)
         if {r["metadata"]["name"] for r in policies} != expected_policies.keys() or \
                 len(policies) != len(expected_policies) or \
                 any(r.get("apiVersion") != "networking.k8s.io/v1" or
@@ -206,6 +316,7 @@ def recovery_manifest_blockers(rendered, namespace, registry):
         backend_config_name = env_from[0]["configMapRef"]["name"]
         backend_config = next(r["data"] for r in resources if r.get("kind") == "ConfigMap"
                               and r["metadata"]["name"] == backend_config_name)
+        blockers.extend(recovery_entry_blockers(resources, backend_config))
         env_names = [entry["name"] for entry in backend_container["env"]]
         if len(env_names) != len(set(env_names)) or set(env_names) & backend_config.keys():
             blockers.append("Recovery Backend environment must not duplicate or override reviewed configuration")

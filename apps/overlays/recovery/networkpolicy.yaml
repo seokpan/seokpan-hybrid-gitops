@@ -77,3 +77,38 @@ spec:
             matchLabels: {app.kubernetes.io/name: backend}
       ports: [{protocol: TCP, port: 6379}]
   # No egress rule: Recovery Valkey initiates no connections.
+---
+# 진입 허용(추가 정책, 기존 4개는 수정하지 않음). 출발지는 "실제 Gateway data-plane Pod"의
+# Namespace+Pod selector를 한 Peer에 함께 지정(AND)한다. 관리 Controller Pod 라벨을 쓰지 않는다.
+# 값은 D의 실제 객체 조회(예: kubectl get pods -n <ns> --show-labels, Gateway가 만든 Deployment) 결과로 채운다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-entry-frontend
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: frontend}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: DATAPLANE_NAMESPACE_INPUT_REQUIRED}
+          podSelector:
+            matchLabels: {DATAPLANE_POD_LABEL_KEY_INPUT_REQUIRED: DATAPLANE_POD_LABEL_VALUE_INPUT_REQUIRED}
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-entry-backend
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: backend}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: DATAPLANE_NAMESPACE_INPUT_REQUIRED}
+          podSelector:
+            matchLabels: {DATAPLANE_POD_LABEL_KEY_INPUT_REQUIRED: DATAPLANE_POD_LABEL_VALUE_INPUT_REQUIRED}
+      ports: [{protocol: TCP, port: 8000}]
