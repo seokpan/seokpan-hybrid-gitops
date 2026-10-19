@@ -3,8 +3,9 @@
 # Recovery-only candidate: default deny ingress/egress plus explicit allows.
 # Confirmed read-only on the target (2026-10-16): Calico enforces NetworkPolicy,
 # CoreDNS pods carry k8s-app=kube-dns (53 UDP/TCP), pool natOutgoing is enabled.
-# Not confirmed: actual allow/deny traffic, FE ingress entry path (INPUT_REQUIRED;
-# the existing Gateway only admits same-namespace Routes), restore/Migration client.
+# Not confirmed: actual allow/deny traffic and the new Gateway's real data-plane Pod labels/ingress source
+# (INPUT_REQUIRED; measured only after the Gateway exists). The existing Gateway only admits same-namespace
+# Routes and is not changed. The Migration client policy lives in operations/recovery/migration.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -80,7 +81,9 @@ spec:
 ---
 # 진입 허용(추가 정책, 기존 4개는 수정하지 않음). 출발지는 "실제 Gateway data-plane Pod"의
 # Namespace+Pod selector를 한 Peer에 함께 지정(AND)한다. 관리 Controller Pod 라벨을 쓰지 않는다.
-# 값은 D의 실제 객체 조회(예: kubectl get pods -n <ns> --show-labels, Gateway가 만든 Deployment) 결과로 채운다.
+# Namespace는 Gateway와 같은 seokpan-recovery다(NGF가 data-plane을 Gateway 옆에 만든다. 기존 application 사례와 같음).
+# Pod 라벨은 Gateway 생성 뒤 Service -> EndpointSlice -> 실제 Pod/owner 조회로 채운다. 기존 application Pod나
+# nginx-gateway Controller Pod의 라벨을 복사하지 않는다.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -92,7 +95,7 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: DATAPLANE_NAMESPACE_INPUT_REQUIRED}
+            matchLabels: {kubernetes.io/metadata.name: seokpan-recovery}
           podSelector:
             matchLabels: {DATAPLANE_POD_LABEL_KEY_INPUT_REQUIRED: DATAPLANE_POD_LABEL_VALUE_INPUT_REQUIRED}
       ports: [{protocol: TCP, port: 8080}]
@@ -108,7 +111,45 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: DATAPLANE_NAMESPACE_INPUT_REQUIRED}
+            matchLabels: {kubernetes.io/metadata.name: seokpan-recovery}
           podSelector:
             matchLabels: {DATAPLANE_POD_LABEL_KEY_INPUT_REQUIRED: DATAPLANE_POD_LABEL_VALUE_INPUT_REQUIRED}
       ports: [{protocol: TCP, port: 8000}]
+---
+# 신규 Gateway data-plane Pod 자체의 통신 허용. 이 Pod도 recovery-default-deny에 선택되므로 없으면 Controller와 못 붙고
+# 사용자 트래픽도 못 받아 Programmed가 되지 않는다.
+# - egress: Controller agent-grpc(Pod 포트 8443; Service 443은 DNAT 전 값), Backend 8000, Frontend 8080, CoreDNS
+# - ingress: 앞단(HAProxy 또는 NodePort 경유 노드) 출발지에서 Gateway 리스너 포트만. 출발지는 A 실측값(지금은 자리표시자)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-dataplane
+spec:
+  podSelector:
+    matchLabels: {DATAPLANE_POD_LABEL_KEY_INPUT_REQUIRED: DATAPLANE_POD_LABEL_VALUE_INPUT_REQUIRED}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - ipBlock: {cidr: DATAPLANE_INGRESS_CIDR_INPUT_REQUIRED}
+      ports: [{protocol: TCP, port: 443}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: nginx-gateway}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: nginx-gateway}
+      ports: [{protocol: TCP, port: 8443}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: backend}
+      ports: [{protocol: TCP, port: 8000}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: frontend}
+      ports: [{protocol: TCP, port: 8080}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]

@@ -368,6 +368,30 @@ class AppManifestBoundaries(unittest.TestCase):
             leaks = self.run_overlay_leaks(self.build_docs(copy_root / "overlays/recovery-run"))
             self.assertEqual(leaks, [("Service", "leak")])
 
+    def test_recovery_full_run_overlay_only_keeps_valkey_and_aligns_its_live_config_reference(self):
+        base = self.build_docs(ROOT / "apps/overlays/recovery")
+        full = self.build_docs(ROOT / "apps/overlays/recovery-full-run")
+        self.assertEqual(full.keys(), base.keys())
+        redis = ("StatefulSet", "recovery-redis")
+        for key, doc in full.items():
+            expected = copy.deepcopy(base[key])
+            if key == redis:
+                expected["spec"]["replicas"] = 1
+                volume = next(v for v in expected["spec"]["template"]["spec"]["volumes"]
+                              if v["name"] == "runtime-config")
+                volume["configMap"]["name"] = doc_volume = next(
+                    v for v in doc["spec"]["template"]["spec"]["volumes"]
+                    if v["name"] == "runtime-config")["configMap"]["name"]
+                # The only allowed live-alignment field is this reference; it must stay an explicit input marker
+                # until a read-only live comparison supplies the real name.
+                self.assertIn("INPUT_REQUIRED", doc_volume)
+            self.assertEqual(doc, expected, key)
+        for name in ("backend", "frontend"):
+            self.assertEqual(full[("Deployment", name)]["spec"]["replicas"], 0)
+        self.assertFalse([k for k in full if k[0] in ("Job", "Secret", "Namespace")])
+        # Whole-app output stays unreleasable: the marker keeps the release gate withholding it.
+        self.assertIn("INPUT_REQUIRED", yaml.safe_dump_all(full.values()))
+
     def test_lab_same_host_api_ws_and_recovery_no_assumed_entry_path(self):
         config = self.backend_config("lab")["data"]
         origin, = json.loads(config["SEOKPAN_ALLOWED_ORIGINS"])
@@ -604,8 +628,12 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
                 r["spec"]["hostnames"] = ["recovery.example.test"]
             elif r["kind"] == "NetworkPolicy" and r["metadata"]["name"].startswith("recovery-entry-"):
                 peer = r["spec"]["ingress"][0]["from"][0]
-                peer["namespaceSelector"]["matchLabels"] = {"kubernetes.io/metadata.name": "fixture-dataplane"}
+                peer["namespaceSelector"]["matchLabels"] = {"kubernetes.io/metadata.name": self.namespace}
                 peer["podSelector"]["matchLabels"] = {"fixture/dataplane": "gateway"}
+            elif r["kind"] == "NetworkPolicy" and r["metadata"]["name"] == "recovery-dataplane":
+                r["spec"]["podSelector"]["matchLabels"] = {"fixture/dataplane": "gateway"}
+                r["spec"]["ingress"][0]["from"] = [{"ipBlock": {"cidr": "192.168.51.30/32"}},
+                                                   {"ipBlock": {"cidr": "192.168.52.30/32"}}]
         config = {}
         for path in ("apps/base/runtime.env", "apps/overlays/recovery/runtime.env"):
             for line in (ROOT / path).read_text(encoding="utf-8").splitlines():
@@ -663,7 +691,7 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
         # Positive path: the real networkpolicy.yaml plus synthetic inputs/replicas passes.
         self.assertEqual(self.blockers(self.fixture()), [])
         names = ("recovery-default-deny", "recovery-frontend", "recovery-backend", "recovery-redis",
-                 "recovery-entry-frontend", "recovery-entry-backend")
+                 "recovery-entry-frontend", "recovery-entry-backend", "recovery-dataplane")
 
         def policy(rs, name):
             return self.resource(rs, "NetworkPolicy", name)
@@ -752,13 +780,25 @@ class RecoveryReleaseBoundaries(unittest.TestCase):
             ("HTTP Origin", lambda rs: set_origin(rs, '["http://recovery.example.test"]')),
             ("explicit 443 Origin", lambda rs: set_origin(rs, '["https://recovery.example.test:443"]')),
             ("Origin with path", lambda rs: set_origin(rs, '["https://recovery.example.test/"]')),
-            ("entry NP widened to all Pods", lambda rs: entry_policy(rs, "recovery-entry-frontend").update({"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fixture-dataplane"}}}]})),
+            ("entry NP widened to all Pods", lambda rs: entry_policy(rs, "recovery-entry-frontend").update({"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": self.namespace}}}]})),
             ("entry NP without Namespace", lambda rs: entry_policy(rs, "recovery-entry-backend").update({"from": [{"podSelector": {"matchLabels": {"fixture/dataplane": "gateway"}}}]})),
             ("entry NP empty Pod selector", lambda rs: entry_policy(rs, "recovery-entry-backend")["from"][0].update(podSelector={"matchLabels": {}})),
             ("entry NP ipBlock", lambda rs: entry_policy(rs, "recovery-entry-frontend").update({"from": [{"ipBlock": {"cidr": "0.0.0.0/0"}}]})),
             ("entry NP BE peers differ", lambda rs: entry_policy(rs, "recovery-entry-backend")["from"][0]["podSelector"]["matchLabels"].update({"fixture/dataplane": "controller"})),
             ("entry NP FE port widened", lambda rs: entry_policy(rs, "recovery-entry-frontend")["ports"].append({"protocol": "TCP", "port": 8000})),
             ("entry NP BE port changed", lambda rs: entry_policy(rs, "recovery-entry-backend")["ports"][0].update(port=8080)),
+            ("entry peer in another Namespace", lambda rs: entry_policy(rs, "recovery-entry-frontend")["from"][0]["namespaceSelector"]["matchLabels"].update({"kubernetes.io/metadata.name": "nginx-gateway"})),
+            ("data-plane selects every Pod", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"].update(podSelector={})),
+            ("data-plane selects the Controller labels", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"].update(podSelector={"matchLabels": {"app.kubernetes.io/name": "nginx-gateway"}})),
+            ("data-plane ingress open to everyone", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["ingress"][0].update({"from": [{"ipBlock": {"cidr": "0.0.0.0/0"}}]})),
+            ("data-plane ingress wide /16", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["ingress"][0].update({"from": [{"ipBlock": {"cidr": "192.168.0.0/16"}}]})),
+            ("data-plane ingress from a Namespace", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["ingress"][0].update({"from": [{"namespaceSelector": {}}]})),
+            ("data-plane ingress placeholder CIDR", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["ingress"][0].update({"from": [{"ipBlock": {"cidr": "DATAPLANE_INGRESS_CIDR_INPUT_REQUIRED"}}]})),
+            ("data-plane ingress port differs from the Gateway listener", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["ingress"][0]["ports"][0].update(port=8443)),
+            ("data-plane Controller port is the Service port", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["egress"][0]["ports"][0].update(port=443)),
+            ("data-plane egress reaches Valkey", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["egress"].append({"to": [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "recovery-redis"}}}], "ports": [{"protocol": "TCP", "port": 6379}]})),
+            ("data-plane egress open", lambda rs: res(rs, "NetworkPolicy", "recovery-dataplane")["spec"]["egress"].append({})),
+            ("data-plane policy missing", lambda rs: rs.remove(res(rs, "NetworkPolicy", "recovery-dataplane"))),
             ("entry NP also admits Valkey", lambda rs: res(rs, "NetworkPolicy", "recovery-entry-backend")["spec"].update(podSelector={"matchLabels": {"app.kubernetes.io/name": "recovery-redis"}})),
         ]
         for label, mutate in mutations:

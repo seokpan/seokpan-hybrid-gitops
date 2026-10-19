@@ -6,6 +6,7 @@ No cluster, registry, AWS or GitHub API calls are made by this script.
 
 import argparse
 import copy
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -50,7 +51,28 @@ def recovery_entry_peer_valid(peer):
             and labels_only(peer["podSelector"]))
 
 
-def recovery_network_policy_specs(entry_peer):
+def recovery_dataplane_sources_valid(sources):
+    """Ingress sources for the new Gateway data-plane Pod: 1-4 narrow IPv4 ipBlocks, nothing else.
+
+    The real source (HAProxy or node address after NodePort traffic) is an owner-measured
+    value; this only rejects an open, wildcard or expression-based peer.
+    """
+    if not isinstance(sources, list) or not 1 <= len(sources) <= 4:
+        return False
+    for source in sources:
+        if not isinstance(source, dict) or set(source) != {"ipBlock"} or \
+                not isinstance(source["ipBlock"], dict) or set(source["ipBlock"]) != {"cidr"}:
+            return False
+        try:
+            network = ipaddress.ip_network(source["ipBlock"]["cidr"], strict=True)
+        except (TypeError, ValueError):
+            return False
+        if network.version != 4 or network.prefixlen < 24:
+            return False
+    return True
+
+
+def recovery_network_policy_specs(entry_peer, listener_port, dataplane_sources):
     """Exact reviewed Recovery NetworkPolicy specs (default deny + minimal allows).
 
     FE/BE ingress is allowed only from ONE data-plane peer (Namespace+Pod labels
@@ -91,6 +113,19 @@ def recovery_network_policy_specs(entry_peer):
         "recovery-entry-backend": {
             "podSelector": select("backend"), "policyTypes": ["Ingress"],
             "ingress": [{"from": [copy.deepcopy(entry_peer)], "ports": tcp(8000)}]},
+        # The new Gateway data-plane Pod lives in this Namespace (NGF provisions it beside the Gateway),
+        # so the default deny also selects it. It needs only: Controller agent-grpc (Pod port 8443),
+        # FE 8080, BE 8000, CoreDNS, and ingress from the measured front-end source on the listener port.
+        "recovery-dataplane": {
+            "podSelector": copy.deepcopy(entry_peer["podSelector"]), "policyTypes": ["Ingress", "Egress"],
+            "ingress": [{"from": copy.deepcopy(dataplane_sources), "ports": tcp(listener_port)}],
+            "egress": [
+                {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "nginx-gateway"}},
+                         "podSelector": {"matchLabels": {"app.kubernetes.io/name": "nginx-gateway"}}}],
+                 "ports": tcp(8443)},
+                {"to": [peer("backend")], "ports": tcp(8000)},
+                {"to": [peer("frontend")], "ports": tcp(8080)},
+                dns]},
     }
 
 
@@ -249,11 +284,23 @@ def recovery_manifest_blockers(rendered, namespace, registry):
             entry_peer = entry_policy["spec"]["ingress"][0]["from"][0]
         except (KeyError, IndexError, TypeError):
             entry_peer = None
-        if not recovery_entry_peer_valid(entry_peer):
-            blockers.append("Recovery entry policies require one data-plane peer with both Namespace and Pod labels")
+        if not recovery_entry_peer_valid(entry_peer) or \
+                entry_peer["namespaceSelector"]["matchLabels"][ENTRY_PEER_NAMESPACE_KEY] != namespace:
+            blockers.append("Recovery entry policies require one data-plane peer with Namespace (this Namespace) and Pod labels")
             entry_peer = {"namespaceSelector": {"matchLabels": {ENTRY_PEER_NAMESPACE_KEY: "invalid"}},
                           "podSelector": {"matchLabels": {"invalid": "invalid"}}}
-        expected_policies = recovery_network_policy_specs(entry_peer)
+        dataplane_policy = next((r for r in policies if r["metadata"]["name"] == "recovery-dataplane"), None)
+        try:
+            dataplane_sources = dataplane_policy["spec"]["ingress"][0]["from"]
+        except (KeyError, IndexError, TypeError):
+            dataplane_sources = None
+        if not recovery_dataplane_sources_valid(dataplane_sources):
+            blockers.append("Recovery data-plane policy requires 1-4 narrow IPv4 ingress sources")
+            dataplane_sources = [{"ipBlock": {"cidr": "192.0.2.1/32"}}]
+        gateway_ports = [r["spec"]["listeners"][0].get("port") for r in resources
+                         if r.get("kind") == "Gateway" and r.get("spec", {}).get("listeners")]
+        listener_port = gateway_ports[0] if len(gateway_ports) == 1 else 0
+        expected_policies = recovery_network_policy_specs(entry_peer, listener_port, dataplane_sources)
         if {r["metadata"]["name"] for r in policies} != expected_policies.keys() or \
                 len(policies) != len(expected_policies) or \
                 any(r.get("apiVersion") != "networking.k8s.io/v1" or
