@@ -1,6 +1,6 @@
 # OCP Source 인계 카드 — 병합 후 다음 실행 (2026-10-05, Image 입력 2026-10-06 갱신)
 
-> **B 전수 대조 후속 — 2026-10-21:** [최종 종료](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/B_ROSA_FINAL_CLOSEOUT_20261021.md)와 [실제 시험 결과](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/HPA_ATTEMPT04_VERIFIED_RESULTS_20261021.md)를 우선한다. B ROSA·정확한 소유 범위 잔존 자원·Snapshot4개 정리는 완료다. 아래 절차·입력 대기·명령은 작성 당시 기록 또는 재사용 계약이며 현재 재실행 요청이 아니다. A 자원과 다른 담당의 종료는 판정하지 않는다. [전체 대조](https://github.com/seokpan/seokpan-hybrid-docs/blob/078b93184790231fbc3b0e03c9ce0b767ab39dab/execution/TJUNG03_FULL_REPOSITORY_AUDIT_20261021.md).
+> **B 전수 대조 후속 — 2026-10-21:** [최종 종료](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/B_ROSA_FINAL_CLOSEOUT_20261021.md)와 [실제 시험 결과](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/HPA_ATTEMPT04_VERIFIED_RESULTS_20261021.md)를 우선한다. B ROSA·정확한 소유 범위 잔존 자원·Snapshot4개 정리는 완료다. 아래 절차·입력 대기·명령은 작성 당시 기록 또는 재사용 계약이며 현재 재실행 요청이 아니다. A 자원과 다른 담당의 종료는 판정하지 않는다. [전체 대조](https://github.com/seokpan/seokpan-hybrid-docs/pull/140).
 
 > **기록 시점과 B의 완료 수락 — 2026-10-16:** 아래 입력/Case 표는 각 작성일의 인계 기록이다. 이후 실제 OCP Run7 교체·Ready/이전 Pod 종료·3클라이언트 기능과 B03 두 해상도/PNG 수락은 [App #4](https://github.com/seokpan/seokpan-hybrid-app/issues/4#issuecomment-6145407122)·[완결 결과 문서 PR](https://github.com/seokpan/seokpan-hybrid-docs/pull/134)에 연결했다. 당시 `NOT RUN`을 현재 미실행으로 해석하거나 성공한 실행을 반복하지 않는다. Cloud/Recovery·공식 다중 Pod/장애의 원 미완료 조건은 그대로다.
 
