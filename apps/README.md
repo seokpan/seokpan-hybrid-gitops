@@ -1,5 +1,7 @@
 # App base와 환경별 입력 대기 구현
 
+> **B 전수 대조 후속 — 2026-10-21:** [최종 종료](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/B_ROSA_FINAL_CLOSEOUT_20261021.md)와 [실제 시험 결과](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/HPA_ATTEMPT04_VERIFIED_RESULTS_20261021.md)를 우선한다. B ROSA·정확한 소유 범위 잔존 자원·Snapshot4개 정리는 완료다. 아래 절차·입력 대기·명령은 작성 당시 기록 또는 재사용 계약이며 현재 재실행 요청이 아니다. A 자원과 다른 담당의 종료는 판정하지 않는다. [전체 대조](https://github.com/seokpan/seokpan-hybrid-docs/blob/078b93184790231fbc3b0e03c9ce0b767ab39dab/execution/TJUNG03_FULL_REPOSITORY_AUDIT_20261021.md).
+
 목적은 D의 [h-gitops Issue #5](https://github.com/seokpan/seokpan-hybrid-gitops/issues/5)에 실제 Kustomize 선언을 인계하고, C의 Offline Recovery에서 소비할 App·새 Redis Source와 Secret/CA 경계를 마련하는 것이다. RTO/RPO 숫자를 정하거나 실제 복구 결과를 대신하는 자료가 아니다.
 
 **B 수락 완료 — 2026-10-16:** 기존 OCP Run7의 FE→BE 교체·새 Ready/이전 Pod 종료·Synced/Healthy·ImageID 대응과3클라이언트 기능을 [App #4 원 결과](https://github.com/seokpan/seokpan-hybrid-app/issues/4#issuecomment-6145407122)에서 수락했다. B03 두 해상도27/27·PNG12장도 완료다. cp-01의 Recovery Secret3/ConfigMap2 최초 create5·내용/UID 대조를 수락했으며 Engine 기동/TLS·복원은 별도다. [Docs 완결 결과 PR](https://github.com/seokpan/seokpan-hybrid-docs/pull/134)에 원 근거를 연결하며 기존 lab 실행을 반복하지 않는다. 이 수락은 Cloud 업무·다중 Pod/장애·독립 Recovery/RTO/RPO의 완료가 아니다.

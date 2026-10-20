@@ -1,5 +1,7 @@
 # Recovery Redis 보호 입력 공급
 
+> **B 전수 대조 후속 — 2026-10-21:** [최종 종료](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/B_ROSA_FINAL_CLOSEOUT_20261021.md)와 [실제 시험 결과](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/HPA_ATTEMPT04_VERIFIED_RESULTS_20261021.md)를 우선한다. B ROSA·정확한 소유 범위 잔존 자원·Snapshot4개 정리는 완료다. 아래 절차·입력 대기·명령은 작성 당시 기록 또는 재사용 계약이며 현재 재실행 요청이 아니다. A 자원과 다른 담당의 종료는 판정하지 않는다. [전체 대조](https://github.com/seokpan/seokpan-hybrid-docs/blob/078b93184790231fbc3b0e03c9ce0b767ab39dab/execution/TJUNG03_FULL_REPOSITORY_AUDIT_20261021.md).
+
 선택 방식: **보호 SOPS와 소비 도구를 Bundle로 인계하고, 승인된 기존 Linux 실행 위치에서 Secret/ConfigMap만 분리 생성**한다. 새 Ansible 역할이나 App Manifest 안 평문 Secret을 만들지 않는다. 완료한 C 입력 해독을 준비 작업 때문에 반복하지 않는다.
 
 대상은 `seokpan-recovery`의 Secret3개·ConfigMap2개다. `tools/supply_recovery_redis_inputs.py`와 같은 폴더의 `prepare_recovery_redis_inputs.py`를 함께 인계하고 Source/파일 해시를 Bundle inventory에 연결한다. Controller 밖 독립 사본·키·도구 가용성은 실제 복원 수락에서 확인한다.

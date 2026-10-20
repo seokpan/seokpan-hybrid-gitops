@@ -1,5 +1,7 @@
 # Recovery Bundle 로컬 인벤토리 검사
 
+> **B 전수 대조 후속 — 2026-10-21:** [최종 종료](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/B_ROSA_FINAL_CLOSEOUT_20261021.md)와 [실제 시험 결과](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/HPA_ATTEMPT04_VERIFIED_RESULTS_20261021.md)를 우선한다. B ROSA·정확한 소유 범위 잔존 자원·Snapshot4개 정리는 완료다. 아래 절차·입력 대기·명령은 작성 당시 기록 또는 재사용 계약이며 현재 재실행 요청이 아니다. A 자원과 다른 담당의 종료는 판정하지 않는다. [전체 대조](https://github.com/seokpan/seokpan-hybrid-docs/blob/078b93184790231fbc3b0e03c9ce0b767ab39dab/execution/TJUNG03_FULL_REPOSITORY_AUDIT_20261021.md).
+
 Recovery Redis 보호 입력의 실제 분리 공급은 [공급 절차](PROTECTED_INPUT_SUPPLY.md)를 따른다. 도구 준비와 실제 객체 공급/TLS/업무 수락을 구분한다.
 
 `tools/check_recovery_bundle.py`는 반입된 **정지 상태의 보호된 로컬 사본**(POSIX: 루트와 모든 하위 폴더는 본인 소유700, 인벤토리·Artifact 일반 파일은 본인 소유600)에서 인벤토리 형식·파일 SHA-256·기존 Recovery 활성 Manifest Gate·컨테이너별 Image Mapping을 대조한다. 실제 Bundle을 지금 만들었다는 기록이 아니다. 테스트는 임시 합성 파일이며 실제 DB·Image·CA·암호화 자료가 아니다.
