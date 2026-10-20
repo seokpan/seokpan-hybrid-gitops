@@ -1,0 +1,45 @@
+# 작성자: 최유준 / 작성 날짜: 2026/10/20
+# Backend HPA for the STATIC activation-target preview only. It is not in the default
+# Cloud Overlay and not a Sync path. Values are the load test scenario v3 candidates
+# (section 4), not reviewed or measured limits; maxReplicas 6 is a demo candidate.
+# tools/render_release.py still blocks the release for the inputs it finds missing
+# (DB pool settings, backend requests, captured lifecycle).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend
+  annotations:
+    seokpan.io/release-state: input-required-no-runtime-validation
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 3          # must exceed backend PDB minAvailable (2)
+  # Worst-case DB connections = running Pods x processes per Pod x (Pool + Overflow)
+  # + Backup/Migration/ops connections must stay below RDS max_connections
+  # (03 §3-F.18.2, [3-F-R17]). Include surge (1) and terminating Pods in the count.
+  # Pool 2+1 per engine = 6 per Pod: (6 + 1 + 1) x 6 + 15 = 63 <= 0.9 x 85.
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Percent of the backend requests.cpu, which must be set (scenario section 4).
+          averageUtilization: 60
+  behavior:
+    # Fast scale-out for the spike stage; each new Pod opens DB/Redis connections.
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - {type: Pods, value: 2, periodSeconds: 60}
+        - {type: Percent, value: 100, periodSeconds: 60}
+    # Slow scale-in: a removed Pod drops its WebSocket sessions after
+    # terminationGracePeriodSeconds (base: 45).
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - {type: Pods, value: 1, periodSeconds: 60}

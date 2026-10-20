@@ -6,10 +6,16 @@ namespace: cloud-input-required
 resources:
   - ../runtime
   - pdb.yaml
+  - hpa.yaml
+# The HPA owns backend scale, so the backend Deployment carries no replicas field
+# (the base hold of 0 is removed below). Frontend stays fixed. At real activation
+# Argo must also ignore /spec/replicas (see README).
 replicas:
-  - name: backend
-    count: 3
   - name: frontend
     count: 3
 patches:
   - path: topology.yaml
+  - target: {kind: Deployment, name: backend}
+    patch: |-
+      - op: remove
+        path: /spec/replicas

@@ -4,6 +4,7 @@ The target build is a preview of approved settings, not a Runtime or rollout.
 No cluster, registry or AWS calls are made. Requires Kustomize and PyYAML.
 """
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,15 @@ CLOUD_ECR = {
 }
 PLACEHOLDER = "INPUT_REQUIRED"
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+# The Cloud AppProject (platform-owned, hash-pinned bootstrap) does not list HPA yet, so
+# the static target preview may render it but the Sync path must not. Remove this
+# constant in the same change that adds the kind to the AppProject.
+PENDING_PLATFORM_WHITELIST = {("autoscaling", "HorizontalPodAutoscaler")}
+HPA_REQUESTS_BLOCKER = "HPA resource utilization requires reviewed backend requests for that resource"
+HPA_PDB_BLOCKER = "HPA minReplicas must exceed the backend PDB minAvailable or voluntary drains stall"
+HPA_POOL_BLOCKER = "Cloud backend HPA requires explicit DB pool settings in the reviewed configuration"
+HPA_OPEN_BLOCKERS = (HPA_REQUESTS_BLOCKER, HPA_POOL_BLOCKER)
+MULTI_REPLICA_BLOCKER = "multi-replica Cloud activation requires reviewed captured lifecycle configuration"
 
 
 def cloud_release_state(images, candidates):
@@ -76,12 +86,16 @@ class CloudManifestBoundaries(unittest.TestCase):
 
     def test_default_cloud_stays_held_and_target_does_not_hide_input_blockers(self):
         self.assertEqual(self.resources("held", "PodDisruptionBudget"), [])
+        self.assertEqual(self.resources("held", "HorizontalPodAutoscaler"), [])
         for preview, replicas in (("held", 0), ("target", 3)):
             deployments = self.resources(preview, "Deployment")
             self.assertEqual({d["metadata"]["name"] for d in deployments},
                              {"frontend", "backend"})
             for deployment in deployments:
-                self.assertEqual(deployment["spec"]["replicas"], replicas)
+                if preview == "target" and deployment["metadata"]["name"] == "backend":
+                    self.assertNotIn("replicas", deployment["spec"])  # the HPA owns backend scale
+                else:
+                    self.assertEqual(deployment["spec"]["replicas"], replicas)
                 self.assertIn("input-required", deployment["metadata"]["annotations"][
                     "seokpan.io/release-state"])
                 container = deployment["spec"]["template"]["spec"]["containers"][0]
@@ -139,8 +153,8 @@ class CloudManifestBoundaries(unittest.TestCase):
     def test_cloud_does_not_own_namespace_secret_data_or_pull_auth(self):
         forbidden = {"Namespace", "Secret", "ServiceAccount", "Role", "RoleBinding",
                      "ClusterRole", "ClusterRoleBinding", "NetworkPolicy", "Application",
-                     "AppProject", "Job", "CronJob", "StatefulSet", "PersistentVolumeClaim",
-                     "HorizontalPodAutoscaler"}
+                     "AppProject", "Job", "CronJob", "StatefulSet", "PersistentVolumeClaim"}
+        # HPA is checked separately: held must have none, target only the reviewed backend one.
         for preview in self.renders:
             self.assertFalse(forbidden & {r["kind"] for r in self.renders[preview]})
             keys = [(r["apiVersion"], r["kind"], r["metadata"].get("namespace"),
@@ -245,6 +259,187 @@ class CloudManifestBoundaries(unittest.TestCase):
             self.assertIn("zero-replica activation hold", result.stderr)
             self.assertFalse(output.exists())
 
+    # ---- Backend HPA (static target preview only) -------------------------------------
+    def target_docs(self):
+        return copy.deepcopy(self.renders["target"])
+
+    @staticmethod
+    def pick(docs, kind, name):
+        return next(d for d in docs if d["kind"] == kind and d["metadata"]["name"] == name)
+
+    def blockers(self, docs):
+        return app_manifest_blockers(yaml.safe_dump_all(docs), "cloud")
+
+    @classmethod
+    def resolve_hpa_inputs(cls, docs, floor=3, pool=True):
+        """Synthetic reviewed values for tests only; never copy them into Source."""
+        hpa = cls.pick(docs, "HorizontalPodAutoscaler", "backend")
+        hpa["spec"]["minReplicas"] = floor
+        container, = cls.pick(docs, "Deployment", "backend")["spec"]["template"]["spec"]["containers"]
+        container["resources"] = {"requests": {"cpu": "250m"}}
+        if pool:
+            next(d for d in docs if d["kind"] == "ConfigMap")["data"].update({
+                "SEOKPAN_DATABASE_POOL_SIZE": "2", "SEOKPAN_DATABASE_MAX_OVERFLOW": "1",
+                "SEOKPAN_DATABASE_POOL_TIMEOUT_SECONDS": "10"})
+        return hpa
+
+    def test_hpa_is_only_in_target_preview_for_backend_and_keeps_input_hold(self):
+        self.assertEqual(self.resources("held", "HorizontalPodAutoscaler"), [])
+        hpa, = self.resources("target", "HorizontalPodAutoscaler")
+        backend = next(d for d in self.resources("target", "Deployment")
+                       if d["metadata"]["name"] == "backend")
+        self.assertEqual(hpa["metadata"]["name"], "backend")
+        self.assertEqual(hpa["apiVersion"], "autoscaling/v2")
+        self.assertEqual(hpa["metadata"]["namespace"], backend["metadata"]["namespace"])
+        self.assertEqual(hpa["spec"]["scaleTargetRef"],
+                         {"apiVersion": "apps/v1", "kind": "Deployment", "name": "backend"})
+        self.assertIn("input-required", hpa["metadata"]["annotations"]["seokpan.io/release-state"])
+
+    def test_hpa_matches_the_load_test_scenario_v3_candidates(self):
+        spec = self.resources("target", "HorizontalPodAutoscaler")[0]["spec"]
+        self.assertEqual((spec["minReplicas"], spec["maxReplicas"]), (3, 6))
+        self.assertEqual(spec["metrics"],
+                         [{"type": "Resource", "resource": {"name": "cpu", "target": {
+                             "type": "Utilization", "averageUtilization": 60}}}])
+        up, down = spec["behavior"]["scaleUp"], spec["behavior"]["scaleDown"]
+        self.assertEqual(up["stabilizationWindowSeconds"], 0)
+        self.assertEqual(up["selectPolicy"], "Max")
+        self.assertCountEqual(up["policies"], [
+            {"type": "Pods", "value": 2, "periodSeconds": 60},
+            {"type": "Percent", "value": 100, "periodSeconds": 60}])
+        self.assertEqual(down["stabilizationWindowSeconds"], 300)
+        self.assertEqual(down["policies"], [{"type": "Pods", "value": 1, "periodSeconds": 60}])
+
+    def test_backend_scale_is_owned_by_the_hpa_and_frontend_stays_fixed(self):
+        backends = {p: next(d for d in self.resources(p, "Deployment")
+                            if d["metadata"]["name"] == "backend") for p in self.renders}
+        frontend = next(d for d in self.resources("target", "Deployment")
+                        if d["metadata"]["name"] == "frontend")
+        self.assertNotIn("replicas", backends["target"]["spec"])
+        self.assertEqual(backends["held"]["spec"]["replicas"], 0)
+        self.assertEqual(frontend["spec"]["replicas"], 3)
+
+    def test_open_hpa_conflicts_block_release_until_resolved(self):
+        blockers = self.blockers(self.renders["target"])
+        for expected in HPA_OPEN_BLOCKERS:
+            self.assertIn(expected, blockers)
+
+    def test_resolved_hpa_inputs_clear_only_the_hpa_blockers(self):
+        docs = self.target_docs()
+        self.resolve_hpa_inputs(docs)
+        blockers = self.blockers(docs)
+        for gone in HPA_OPEN_BLOCKERS:
+            self.assertNotIn(gone, blockers)
+        # Captured lifecycle mode is still an unreviewed input with 3..6 backend Pods.
+        self.assertIn(MULTI_REPLICA_BLOCKER, blockers)
+
+    def test_hpa_floor_must_exceed_pdb_min_available(self):
+        # Scenario v3 floor 3 leaves one allowed disruption with PDB minAvailable 2.
+        self.assertNotIn(HPA_PDB_BLOCKER, self.blockers(self.renders["target"]))
+        # Floor 2 would allow zero disruptions and stall drains.
+        docs = self.target_docs()
+        self.resolve_hpa_inputs(docs, floor=2)
+        self.assertIn(HPA_PDB_BLOCKER, self.blockers(docs))
+        # A reviewed PDB change (not made here) is the other way to resolve it.
+        budget = self.pick(docs, "PodDisruptionBudget", "backend")
+        del budget["spec"]["minAvailable"]
+        budget["spec"]["maxUnavailable"] = 1
+        self.assertNotIn(HPA_PDB_BLOCKER, self.blockers(docs))
+
+    def test_hpa_requires_explicit_db_pool_settings(self):
+        self.assertIn(HPA_POOL_BLOCKER, self.blockers(self.renders["target"]))
+        for key in ("SEOKPAN_DATABASE_POOL_SIZE", "SEOKPAN_DATABASE_MAX_OVERFLOW",
+                    "SEOKPAN_DATABASE_POOL_TIMEOUT_SECONDS"):
+            for label, change in (("missing", None), ("placeholder", PLACEHOLDER)):
+                with self.subTest(key=key, case=label):
+                    docs = self.target_docs()
+                    self.resolve_hpa_inputs(docs)
+                    config = next(d for d in docs if d["kind"] == "ConfigMap")["data"]
+                    if change is None:
+                        del config[key]
+                    else:
+                        config[key] = change
+                    self.assertIn(HPA_POOL_BLOCKER, self.blockers(docs))
+
+    def test_hpa_upper_bound_cannot_bypass_the_multi_replica_lifecycle_gate(self):
+        docs = self.target_docs()
+        self.pick(docs, "Deployment", "backend")["spec"]["replicas"] = 1
+        hpa = self.resolve_hpa_inputs(docs, floor=1)
+        hpa["spec"]["maxReplicas"] = 3
+        self.assertIn(MULTI_REPLICA_BLOCKER, self.blockers(docs))
+        # Placeholder upper bound is treated as possibly above one Pod.
+        hpa["spec"]["maxReplicas"] = PLACEHOLDER
+        self.assertIn(MULTI_REPLICA_BLOCKER, self.blockers(docs))
+        # Negative control: one fixed Pod and no HPA never needed captured mode.
+        docs = [d for d in docs if d["kind"] != "HorizontalPodAutoscaler"]
+        self.assertNotIn(MULTI_REPLICA_BLOCKER, self.blockers(docs))
+
+    def test_invalid_hpa_shapes_are_blocked(self):
+        def retarget(hpa, docs):
+            hpa["spec"]["scaleTargetRef"]["name"] = "frontend"
+
+        def duplicate(hpa, docs):
+            second = copy.deepcopy(hpa)
+            second["metadata"]["name"] = "backend-extra"
+            docs.append(second)
+
+        def below_min(hpa, docs):
+            hpa["spec"]["maxReplicas"] = hpa["spec"]["minReplicas"] - 1
+
+        def placeholder_max(hpa, docs):
+            hpa["spec"]["maxReplicas"] = PLACEHOLDER
+
+        def placeholder_utilization(hpa, docs):
+            hpa["spec"]["metrics"][0]["resource"]["target"]["averageUtilization"] = PLACEHOLDER
+
+        def old_api(hpa, docs):
+            hpa["apiVersion"] = "autoscaling/v2beta2"
+
+        def memory_without_requests(hpa, docs):
+            hpa["spec"]["metrics"][0]["resource"]["name"] = "memory"
+
+        def external_metric(hpa, docs):
+            hpa["spec"]["metrics"] = [{"type": "External", "external": {}}]
+
+        def no_metric(hpa, docs):
+            hpa["spec"]["metrics"] = []
+
+        def no_requests(hpa, docs):
+            container, = self.pick(docs, "Deployment", "backend")["spec"]["template"]["spec"]["containers"]
+            del container["resources"]
+
+        one = "Cloud allows exactly one HorizontalPodAutoscaler, targeting the backend Deployment"
+        cases = {
+            "non-backend target": (retarget, one),
+            "second HPA": (duplicate, one),
+            "max below min": (below_min, "HorizontalPodAutoscaler maxReplicas must not be below minReplicas"),
+            "placeholder max": (placeholder_max, "Cloud backend HPA requires a reviewed maxReplicas from the DB connection budget"),
+            "placeholder utilization": (placeholder_utilization, "Cloud backend HPA requires a reviewed utilization target"),
+            "old API": (old_api, "Cloud HorizontalPodAutoscaler must use autoscaling/v2"),
+            "memory without requests": (memory_without_requests, HPA_REQUESTS_BLOCKER),
+            "external metric": (external_metric, "Cloud HPA metric must be a reviewed Resource Utilization target"),
+            "no metric": (no_metric, "Cloud backend HPA requires an explicit reviewed metric"),
+            "cpu without requests": (no_requests, HPA_REQUESTS_BLOCKER),
+        }
+        for label, (mutate, expected) in cases.items():
+            with self.subTest(label):
+                docs = self.target_docs()
+                hpa = self.resolve_hpa_inputs(docs)
+                mutate(hpa, docs)
+                self.assertIn(expected, self.blockers(docs))
+
+    def test_target_kinds_fit_the_cloud_appproject_except_the_pending_hpa(self):
+        project = json.loads((ROOT / "clusters/cloud/bootstrap/project.json").read_text())
+        allowed = {(e["group"], e["kind"]) for e in project["spec"]["namespaceResourceWhitelist"]}
+
+        def kinds(preview):
+            return {(r["apiVersion"].rpartition("/")[0], r["kind"]) for r in self.renders[preview]}
+
+        # The default (Sync) path must fit the AppProject today.
+        self.assertLessEqual(kinds("held"), allowed)
+        self.assertEqual(kinds("target") - allowed, PENDING_PLATFORM_WHITELIST,
+                         "AppProject now matches the target kinds: remove PENDING_PLATFORM_WHITELIST "
+                         "and make HPA a regular allowed kind in this test")
 
 class CloudDigestFromReleaseCandidate(unittest.TestCase):
     """Cloud digests come from ecr_digest of ONE cloud candidate; Harbor is never a substitute."""

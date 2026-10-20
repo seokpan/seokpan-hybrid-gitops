@@ -197,6 +197,63 @@ def recovery_entry_blockers(resources, config):
     return blockers
 
 
+DATABASE_POOL_KEYS = ("SEOKPAN_DATABASE_POOL_SIZE", "SEOKPAN_DATABASE_MAX_OVERFLOW",
+                      "SEOKPAN_DATABASE_POOL_TIMEOUT_SECONDS")
+
+
+def backend_hpa_review(resources, backend):
+    """Review the Cloud backend HorizontalPodAutoscaler Source.
+
+    Returns (blockers, max_replicas). max_replicas is None while the reviewed
+    DB-connection-based upper bound is still an input, so callers must treat the
+    backend as possibly multi-replica. Source composition only: no metrics API,
+    measured requests or runtime scaling behaviour is verified here.
+    """
+    blockers = []
+    hpas = [r for r in resources if r.get("kind") == "HorizontalPodAutoscaler"]
+    backend_ref = {"apiVersion": "apps/v1", "kind": "Deployment", "name": "backend"}
+    if len(hpas) != 1 or hpas[0]["spec"]["scaleTargetRef"] != backend_ref:
+        blockers.append("Cloud allows exactly one HorizontalPodAutoscaler, targeting the backend Deployment")
+    container, = backend["spec"]["template"]["spec"]["containers"]
+    requests = container.get("resources", {}).get("requests", {})
+    bounds = []
+    for hpa in hpas:
+        spec = hpa["spec"]
+        if hpa.get("apiVersion") != "autoscaling/v2":
+            blockers.append("Cloud HorizontalPodAutoscaler must use autoscaling/v2")
+        minimum = spec["minReplicas"]
+        if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 1:
+            raise ValueError
+        labels = backend["spec"]["template"]["metadata"]["labels"]
+        for budget in (r for r in resources if r.get("kind") == "PodDisruptionBudget"
+                       and r["spec"]["selector"].get("matchLabels") == labels):
+            available = budget["spec"].get("minAvailable")
+            if isinstance(available, int) and not isinstance(available, bool) and minimum <= available:
+                blockers.append("HPA minReplicas must exceed the backend PDB minAvailable or voluntary drains stall")
+        maximum = spec["maxReplicas"]
+        if isinstance(maximum, int) and not isinstance(maximum, bool):
+            if maximum < minimum:
+                blockers.append("HorizontalPodAutoscaler maxReplicas must not be below minReplicas")
+            bounds.append(maximum)
+        else:
+            blockers.append("Cloud backend HPA requires a reviewed maxReplicas from the DB connection budget")
+            bounds.append(None)
+        metrics = spec.get("metrics")
+        if not metrics:
+            blockers.append("Cloud backend HPA requires an explicit reviewed metric")
+        for metric in metrics or []:
+            if metric.get("type") != "Resource" or \
+                    metric["resource"]["target"].get("type") != "Utilization":
+                blockers.append("Cloud HPA metric must be a reviewed Resource Utilization target")
+                continue
+            target = metric["resource"]["target"].get("averageUtilization")
+            if not isinstance(target, int) or isinstance(target, bool) or target < 1:
+                blockers.append("Cloud backend HPA requires a reviewed utilization target")
+            if metric["resource"]["name"] not in requests:
+                blockers.append("HPA resource utilization requires reviewed backend requests for that resource")
+    return blockers, None if None in bounds else max(bounds, default=1)
+
+
 def app_manifest_blockers(rendered, environment):
     """Check immutable App images and declared multi-replica lifecycle inputs.
 
@@ -234,7 +291,14 @@ def app_manifest_blockers(rendered, environment):
             replicas = backend["spec"].get("replicas", 1)
             if not isinstance(replicas, int) or isinstance(replicas, bool):
                 raise ValueError
-            if replicas > 1:
+            # An HPA can raise the backend above spec.replicas, so its upper bound counts
+            # as multi-replica too. An unreviewed bound is treated as possibly above 1.
+            may_run = replicas
+            if any(r.get("kind") == "HorizontalPodAutoscaler" for r in resources):
+                hpa_blockers, hpa_max = backend_hpa_review(resources, backend)
+                blockers.extend(hpa_blockers)
+                may_run = max(replicas, 2 if hpa_max is None else hpa_max)
+            if may_run > 1:
                 container, = backend["spec"]["template"]["spec"]["containers"]
                 env_from, = container["envFrom"]
                 if set(env_from) != {"configMapRef"} or \
@@ -249,6 +313,11 @@ def app_manifest_blockers(rendered, environment):
                     blockers.append("Cloud lifecycle must not override its reviewed configuration")
                 if config.get("SEOKPAN_GAME_LIFECYCLE_MODE") != "captured":
                     blockers.append("multi-replica Cloud activation requires reviewed captured lifecycle configuration")
+                # Unset pools fall back to library defaults (per engine 5 + 10 overflow), which
+                # can exceed RDS max_connections once the HPA scales out.
+                if any(r.get("kind") == "HorizontalPodAutoscaler" for r in resources) and \
+                        any(config.get(key) in (None, "", "INPUT_REQUIRED") for key in DATABASE_POOL_KEYS):
+                    blockers.append("Cloud backend HPA requires explicit DB pool settings in the reviewed configuration")
     except (AttributeError, KeyError, TypeError, ValueError, IndexError, StopIteration, yaml.YAMLError):
         blockers.append("App manifest structure or lifecycle configuration is invalid")
     return list(dict.fromkeys(blockers))
