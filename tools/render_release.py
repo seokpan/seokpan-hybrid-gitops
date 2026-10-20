@@ -6,7 +6,6 @@ No cluster, registry, AWS or GitHub API calls are made by this script.
 
 import argparse
 import copy
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -51,28 +50,7 @@ def recovery_entry_peer_valid(peer):
             and labels_only(peer["podSelector"]))
 
 
-def recovery_dataplane_sources_valid(sources):
-    """Ingress sources for the new Gateway data-plane Pod: 1-4 narrow IPv4 ipBlocks, nothing else.
-
-    The real source (HAProxy or node address after NodePort traffic) is an owner-measured
-    value; this only rejects an open, wildcard or expression-based peer.
-    """
-    if not isinstance(sources, list) or not 1 <= len(sources) <= 4:
-        return False
-    for source in sources:
-        if not isinstance(source, dict) or set(source) != {"ipBlock"} or \
-                not isinstance(source["ipBlock"], dict) or set(source["ipBlock"]) != {"cidr"}:
-            return False
-        try:
-            network = ipaddress.ip_network(source["ipBlock"]["cidr"], strict=True)
-        except (TypeError, ValueError):
-            return False
-        if network.version != 4 or network.prefixlen < 24:
-            return False
-    return True
-
-
-def recovery_network_policy_specs(entry_peer, listener_port, dataplane_sources):
+def recovery_network_policy_specs(entry_peer):
     """Exact reviewed Recovery NetworkPolicy specs (default deny + minimal allows).
 
     FE/BE ingress is allowed only from ONE data-plane peer (Namespace+Pod labels
@@ -113,19 +91,6 @@ def recovery_network_policy_specs(entry_peer, listener_port, dataplane_sources):
         "recovery-entry-backend": {
             "podSelector": select("backend"), "policyTypes": ["Ingress"],
             "ingress": [{"from": [copy.deepcopy(entry_peer)], "ports": tcp(8000)}]},
-        # The new Gateway data-plane Pod lives in this Namespace (NGF provisions it beside the Gateway),
-        # so the default deny also selects it. It needs only: Controller agent-grpc (Pod port 8443),
-        # FE 8080, BE 8000, CoreDNS, and ingress from the measured front-end source on the listener port.
-        "recovery-dataplane": {
-            "podSelector": copy.deepcopy(entry_peer["podSelector"]), "policyTypes": ["Ingress", "Egress"],
-            "ingress": [{"from": copy.deepcopy(dataplane_sources), "ports": tcp(listener_port)}],
-            "egress": [
-                {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "nginx-gateway"}},
-                         "podSelector": {"matchLabels": {"app.kubernetes.io/name": "nginx-gateway"}}}],
-                 "ports": tcp(8443)},
-                {"to": [peer("backend")], "ports": tcp(8000)},
-                {"to": [peer("frontend")], "ports": tcp(8080)},
-                dns]},
     }
 
 
@@ -197,6 +162,63 @@ def recovery_entry_blockers(resources, config):
     return blockers
 
 
+DATABASE_POOL_KEYS = ("SEOKPAN_DATABASE_POOL_SIZE", "SEOKPAN_DATABASE_MAX_OVERFLOW",
+                      "SEOKPAN_DATABASE_POOL_TIMEOUT_SECONDS")
+
+
+def backend_hpa_review(resources, backend):
+    """Review the Cloud backend HorizontalPodAutoscaler Source.
+
+    Returns (blockers, max_replicas). max_replicas is None while the reviewed
+    DB-connection-based upper bound is still an input, so callers must treat the
+    backend as possibly multi-replica. Source composition only: no metrics API,
+    measured requests or runtime scaling behaviour is verified here.
+    """
+    blockers = []
+    hpas = [r for r in resources if r.get("kind") == "HorizontalPodAutoscaler"]
+    backend_ref = {"apiVersion": "apps/v1", "kind": "Deployment", "name": "backend"}
+    if len(hpas) != 1 or hpas[0]["spec"]["scaleTargetRef"] != backend_ref:
+        blockers.append("Cloud allows exactly one HorizontalPodAutoscaler, targeting the backend Deployment")
+    container, = backend["spec"]["template"]["spec"]["containers"]
+    requests = container.get("resources", {}).get("requests", {})
+    bounds = []
+    for hpa in hpas:
+        spec = hpa["spec"]
+        if hpa.get("apiVersion") != "autoscaling/v2":
+            blockers.append("Cloud HorizontalPodAutoscaler must use autoscaling/v2")
+        minimum = spec["minReplicas"]
+        if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 1:
+            raise ValueError
+        labels = backend["spec"]["template"]["metadata"]["labels"]
+        for budget in (r for r in resources if r.get("kind") == "PodDisruptionBudget"
+                       and r["spec"]["selector"].get("matchLabels") == labels):
+            available = budget["spec"].get("minAvailable")
+            if isinstance(available, int) and not isinstance(available, bool) and minimum <= available:
+                blockers.append("HPA minReplicas must exceed the backend PDB minAvailable or voluntary drains stall")
+        maximum = spec["maxReplicas"]
+        if isinstance(maximum, int) and not isinstance(maximum, bool):
+            if maximum < minimum:
+                blockers.append("HorizontalPodAutoscaler maxReplicas must not be below minReplicas")
+            bounds.append(maximum)
+        else:
+            blockers.append("Cloud backend HPA requires a reviewed maxReplicas from the DB connection budget")
+            bounds.append(None)
+        metrics = spec.get("metrics")
+        if not metrics:
+            blockers.append("Cloud backend HPA requires an explicit reviewed metric")
+        for metric in metrics or []:
+            if metric.get("type") != "Resource" or \
+                    metric["resource"]["target"].get("type") != "Utilization":
+                blockers.append("Cloud HPA metric must be a reviewed Resource Utilization target")
+                continue
+            target = metric["resource"]["target"].get("averageUtilization")
+            if not isinstance(target, int) or isinstance(target, bool) or target < 1:
+                blockers.append("Cloud backend HPA requires a reviewed utilization target")
+            if metric["resource"]["name"] not in requests:
+                blockers.append("HPA resource utilization requires reviewed backend requests for that resource")
+    return blockers, None if None in bounds else max(bounds, default=1)
+
+
 def app_manifest_blockers(rendered, environment):
     """Check immutable App images and declared multi-replica lifecycle inputs.
 
@@ -234,7 +256,14 @@ def app_manifest_blockers(rendered, environment):
             replicas = backend["spec"].get("replicas", 1)
             if not isinstance(replicas, int) or isinstance(replicas, bool):
                 raise ValueError
-            if replicas > 1:
+            # An HPA can raise the backend above spec.replicas, so its upper bound counts
+            # as multi-replica too. An unreviewed bound is treated as possibly above 1.
+            may_run = replicas
+            if any(r.get("kind") == "HorizontalPodAutoscaler" for r in resources):
+                hpa_blockers, hpa_max = backend_hpa_review(resources, backend)
+                blockers.extend(hpa_blockers)
+                may_run = max(replicas, 2 if hpa_max is None else hpa_max)
+            if may_run > 1:
                 container, = backend["spec"]["template"]["spec"]["containers"]
                 env_from, = container["envFrom"]
                 if set(env_from) != {"configMapRef"} or \
@@ -249,6 +278,11 @@ def app_manifest_blockers(rendered, environment):
                     blockers.append("Cloud lifecycle must not override its reviewed configuration")
                 if config.get("SEOKPAN_GAME_LIFECYCLE_MODE") != "captured":
                     blockers.append("multi-replica Cloud activation requires reviewed captured lifecycle configuration")
+                # Unset pools fall back to library defaults (per engine 5 + 10 overflow), which
+                # can exceed RDS max_connections once the HPA scales out.
+                if any(r.get("kind") == "HorizontalPodAutoscaler" for r in resources) and \
+                        any(config.get(key) in (None, "", "INPUT_REQUIRED") for key in DATABASE_POOL_KEYS):
+                    blockers.append("Cloud backend HPA requires explicit DB pool settings in the reviewed configuration")
     except (AttributeError, KeyError, TypeError, ValueError, IndexError, StopIteration, yaml.YAMLError):
         blockers.append("App manifest structure or lifecycle configuration is invalid")
     return list(dict.fromkeys(blockers))
@@ -284,23 +318,11 @@ def recovery_manifest_blockers(rendered, namespace, registry):
             entry_peer = entry_policy["spec"]["ingress"][0]["from"][0]
         except (KeyError, IndexError, TypeError):
             entry_peer = None
-        if not recovery_entry_peer_valid(entry_peer) or \
-                entry_peer["namespaceSelector"]["matchLabels"][ENTRY_PEER_NAMESPACE_KEY] != namespace:
-            blockers.append("Recovery entry policies require one data-plane peer with Namespace (this Namespace) and Pod labels")
+        if not recovery_entry_peer_valid(entry_peer):
+            blockers.append("Recovery entry policies require one data-plane peer with both Namespace and Pod labels")
             entry_peer = {"namespaceSelector": {"matchLabels": {ENTRY_PEER_NAMESPACE_KEY: "invalid"}},
                           "podSelector": {"matchLabels": {"invalid": "invalid"}}}
-        dataplane_policy = next((r for r in policies if r["metadata"]["name"] == "recovery-dataplane"), None)
-        try:
-            dataplane_sources = dataplane_policy["spec"]["ingress"][0]["from"]
-        except (KeyError, IndexError, TypeError):
-            dataplane_sources = None
-        if not recovery_dataplane_sources_valid(dataplane_sources):
-            blockers.append("Recovery data-plane policy requires 1-4 narrow IPv4 ingress sources")
-            dataplane_sources = [{"ipBlock": {"cidr": "192.0.2.1/32"}}]
-        gateway_ports = [r["spec"]["listeners"][0].get("port") for r in resources
-                         if r.get("kind") == "Gateway" and r.get("spec", {}).get("listeners")]
-        listener_port = gateway_ports[0] if len(gateway_ports) == 1 else 0
-        expected_policies = recovery_network_policy_specs(entry_peer, listener_port, dataplane_sources)
+        expected_policies = recovery_network_policy_specs(entry_peer)
         if {r["metadata"]["name"] for r in policies} != expected_policies.keys() or \
                 len(policies) != len(expected_policies) or \
                 any(r.get("apiVersion") != "networking.k8s.io/v1" or

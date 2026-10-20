@@ -16,6 +16,37 @@ App main `c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3`의 `Settings`는 `legacy`/`c
 
 `tools/render_release.py`는 lab/Cloud의 FE/BE 및 initContainer가 Registry의 정확한 `@sha256` Image를 참조하도록 검사하고, Cloud Backend가 2개 이상일 때 `captured`를 명시한 검토된 ConfigMap을 요구한다. 이는 Source 입력 보조 Gate이며 `captured` 선언만으로 실제 다중 Pod 업무 안전이 확인됐다는 뜻이 아니다. [App 전환 근거](https://github.com/seokpan/seokpan-hybrid-app/blob/c12b3d15a4dd2c806fac4326a9eb30ed6e8a81b3/backend/docs/game-lifecycle-rollout.md)의 기존 writer 정지·Data 분류/보존·동일 Image/모드·2 Replica 실패 주입·Gateway/업무 수락 후 별도 활성화 변경으로 값을 확정한다. 미수락 조합을 일반 Rolling Update로 혼합하지 않는다. 실제 수락과 실패/제한은 App #4·GitOps #10의 새 Run에 기록한다.
 
+## Backend HPA 후보 (정적 Preview)
+
+[`activation-target/hpa.yaml`](activation-target/hpa.yaml)은 Backend HPA 후보이며 `activation-target/`에만 있다. 기본 Cloud Overlay와 Argo Sync 경로에는 포함하지 않는다. 설계 문서는 초기 HPA를 보류하고 고정 구성을 먼저 측정하도록 하므로(`03_DETAILED_DESIGN.md` §3-F), 이 선언은 활성화 결정이 아니라 부하테스트 시나리오 v3 §4의 HPA 후보값을 옮긴 Source 후보다. 시나리오 값은 검토·실측을 마친 한계값이 아니다. 시험용 임시 HPA는 B의 `tools/hpa-load`가 런타임에 만들고 지우며, 이 파일은 그와 별개의 Git 후보다. 영구 HPA 활성화는 시험 종료·원복 이후에 한다(시험 게이트가 다른 Backend HPA를 허용하지 않는다).
+
+| 항목 | 값 | 비고 |
+|---|---|---|
+| 대상 | `Deployment/backend` | Backend만. Frontend는 3 Replica 고정 |
+| `minReplicas` / `maxReplicas` | 3 / 6 | min 3은 시나리오 v3 후보(승인 목표 3과 같음), max 6은 시연용 후보. 시나리오의 max 10은 아래 연결 예산을 만족하지 못해 쓰지 않았다 |
+| 메트릭 | CPU Utilization 60% | Backend `requests.cpu` 대비 |
+| scaleUp | 안정화 0초, 60초당 +2 Pod 또는 +100% 중 큰 값 | `selectPolicy: Max` |
+| scaleDown | 안정화 300초, 60초당 -1 Pod | 종료 유예 45초 동안 WebSocket 연결이 끊긴다 |
+
+Backend Deployment에는 `replicas` 선언이 없다(HPA가 Scale을 소유). 기본 Cloud Render는 base의 `replicas: 0` 보류를 그대로 유지한다.
+
+`tools/render_release.py`는 아래 충돌이 남아 있는 동안 Release를 막는다. 값을 임의로 바꾸지 않고 확인 후 해소한다.
+
+| 충돌·미정 | 내용 | 해소 방법 |
+|---|---|---|
+| Backend `requests.cpu` 미설정 | 값이 없으면 CPU 사용률이 계산되지 않는다 | 실측 후 Cloud Overlay에서 지정 |
+| DB 풀 미지정 | 미설정이면 라이브러리 기본값(엔진당 최대 15, Pod당 30)이다. min 3만으로도 `3×30+15=105`로 RDS `max_connections`(85 미만)를 넘는다. 풀 타임아웃 값도 시나리오에 아직 없다 | `SEOKPAN_DATABASE_POOL_SIZE`·`MAX_OVERFLOW`·`POOL_TIMEOUT_SECONDS`를 지정. 아래 계산 참고 |
+| `captured` lifecycle 미정 | Backend가 2개 이상이면 필요하다 | App 전환 근거 수락 후 지정 |
+
+DB 연결 계산: Pod당 최악 연결은 `2 × (pool + overflow)`(identity·game 엔진, 단일 프로세스)이고, `(maxReplicas + surge + 종료 중 Pod) × Pod당 연결 + 예약 연결 ≤ 0.9 × max_connections`여야 한다. 시나리오 v3 후보(엔진당 2+1 = Pod당 6, 예약 15, `max_connections` 85 가정)에서는 surge 1·종료 중 0이면 max 9가 상한이고 종료 중 1이면 8이다. max 6은 `(6+1+1)×6+15 = 63`으로 한도 76.5 안이다. 85는 실측값이 아니며 문서상 '85 미만'이므로 실측 후 다시 계산한다. 관리용 연결 수와 풀 값은 B/C가 정한다. 배포 이미지가 풀 환경변수를 실제로 소비하는지도 digest로 확인한다.
+
+이 검사는 Source 검사이며 실제 지표 수집·Scale 동작·다중 Pod 업무 안전을 검증한 것이 아니다. 클러스터의 metrics API 제공 여부도 실제 Cluster에서 확인하기 전이다.
+
+활성화 변경에서 함께 처리할 항목:
+
+- **Replica 소유:** Application에 `/spec/replicas` `ignoreDifferences`와 `RespectIgnoreDifferences=true`를 둔다. Application은 `tools/cloud_platform_contract.py`가 생성하므로 이번 변경에는 포함하지 않았다.
+- **플랫폼 소유 후속(이번 변경에 미포함):** ① `clusters/cloud/bootstrap/project.json`의 AppProject 허용 목록에 `autoscaling`/`HorizontalPodAutoscaler` 추가. `register-cloud-project.sh`가 이 파일의 SHA-256을 고정하고 기존 등록은 spec 동일성을 요구하므로 해시 개정과 이미 등록된 AppProject의 별도 반영이 필요하다. ② `tools/cloud_platform_contract.py`의 허용 종류와 observer Role. ③ `clusters/cloud/bootstrap/platform-next.py`의 컨트롤러 쓰기 권한 대조. 반영하면 `test_cloud_manifests.py`의 `PENDING_PLATFORM_WHITELIST`를 제거한다.
+
 ## 연결 입력과 Ownership
 
 | 범위 | 현재 선언/소비 계약 | 실제 입력과 남은 Gate |
