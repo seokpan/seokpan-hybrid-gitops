@@ -1,5 +1,7 @@
 # Cloud 선언 후보와 실행 보류
 
+> **B 전수 대조 후속 — 2026-10-21:** [최종 종료](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/B_ROSA_FINAL_CLOSEOUT_20261021.md)와 [실제 시험 결과](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/HPA_ATTEMPT04_VERIFIED_RESULTS_20261021.md)를 우선한다. B ROSA·정확한 소유 범위 잔존 자원·Snapshot4개 정리는 완료다. 아래 절차·입력 대기·명령은 작성 당시 기록 또는 재사용 계약이며 현재 재실행 요청이 아니다. A 자원과 다른 담당의 종료는 판정하지 않는다. [전체 대조](https://github.com/seokpan/seokpan-hybrid-docs/pull/140).
+
 ROSA Cloud App에 사용할 환경별 선언을 실제 Kustomize Overlay로 연결했다. 결과는 정적 Source 후보이며 실제 Cluster·Endpoint·Image·Secret·CA·Route·Runtime 검증은 남았다. 기본 Cloud Render는 공통 base의 FE/BE `replicas: 0`을 유지한다. `cloud-input-required`, `.invalid`, `INPUT_REQUIRED`는 실제 Namespace·Host·Image가 아니며 이 선언을 Apply/Sync하지 않는다.
 
 본인 선언 원본은 [GitOps #10](https://github.com/seokpan/seokpan-hybrid-gitops/issues/10)의 TH-09, 상위 진행 원본은 [Docs #21](https://github.com/seokpan/seokpan-hybrid-docs/issues/21)이다. 기존 PR #9의 base/lab/Recovery 변경과 별도 Cloud 후속 범위를 연결하며, D의 #5/#6 실제 lab·수정 Image 검증 책임을 대신하지 않는다. Source 후보 작성/검사를 해당 체크 전체 완료로 올리지 않는다.

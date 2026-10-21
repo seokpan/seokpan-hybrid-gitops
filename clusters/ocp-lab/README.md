@@ -1,5 +1,7 @@
 # OCP-lab 첫 Source 인계
 
+> **B 전수 대조 후속 — 2026-10-21:** [최종 종료](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/B_ROSA_FINAL_CLOSEOUT_20261021.md)와 [실제 시험 결과](https://github.com/seokpan/seokpan-hybrid-docs/blob/main/execution/HPA_ATTEMPT04_VERIFIED_RESULTS_20261021.md)를 우선한다. B ROSA·정확한 소유 범위 잔존 자원·Snapshot4개 정리는 완료다. 아래 절차·입력 대기·명령은 작성 당시 기록 또는 재사용 계약이며 현재 재실행 요청이 아니다. A 자원과 다른 담당의 종료는 판정하지 않는다. [전체 대조](https://github.com/seokpan/seokpan-hybrid-docs/pull/140).
+
 **2026-10-07 현재 선택:** [경로 A 등록·검사 안내](../../handoff/OCP_PATH_A_REGISTRATION.md)를 따른다. 기존 `openshift-gitops`에 제한 AppProject/Application 각 1개만 등록하며 새 Root/Controller를 추가하지 않는다. 아래 경로 비교는 보존된 후보이고, 실제 등록값은 Workload 입력 PR 병합 후 그 전체 SHA에 고정하는 별도 PR에서 반영한다. 현재 placeholder Source는 실행하지 않는다.
 
 이 경로는 승인 구조를 연결하는 **기동 보류 Source 리뷰 후보**다. 실제 Controller Namespace/Instance·Owner·권한·Revision·Image/Secret/Schema 입력과 그 대상의 검토 전에는 Apply/Sync하지 않는다. `gitops-controller-input-required`, `GITOPS_REVISION_INPUT_REQUIRED`는 실제 환경을 관측한 값이 아니다. Application 이름은 검토용 후보이며 기존 같은 객체의 이름·Owner를 먼저 대조한다.
